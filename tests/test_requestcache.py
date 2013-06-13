@@ -27,4 +27,5 @@ class TestRequestCache(unittest.TestCase):
         if not self.request_cache.has(identifier, Cache2):
             self.request_cache.set(identifier, Cache2())
 
-        assert self.request_cache.get(identifier, Cache1), 'should not have replaced the first assigned cache'
+        assert self.request_cache.has(identifier, Cache), 'should be possible to pass a parent to check if a subclass is set'
+        assert self.request_cache.has(identifier, Cache1), 'should not have replaced the first assigned cache'
