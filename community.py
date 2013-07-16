@@ -227,6 +227,10 @@ class Community(object):
         @rtype: Community
         """
         assert isinstance(master, DummyMember)
+
+        import sys
+        print >> sys.stderr, cls
+
         if __debug__: dprint("loading ", cls.get_classification(), " ", master.mid.encode("HEX"))
         community = cls(master, *args, **kargs)
 
@@ -313,8 +317,8 @@ class Community(object):
         # random seed, used for sync range
         self._random = Random(self._cid)
         self._nrsyncpackets = 0
-        
-        #Initialize all the candidate iterators
+
+        # Initialize all the candidate iterators
         self._candidates = OrderedDict()
         self._walked_candidates = self._iter_category(u'walk')
         self._stumbled_candidates = self._iter_category(u'stumble')
@@ -325,7 +329,7 @@ class Community(object):
 
         # statistics...
         self._statistics = CommunityStatistics(self)
-        
+
     @property
     def statistics(self):
         """
@@ -618,10 +622,10 @@ class Community(object):
 
         if __debug__:
             import sys
-            print >> sys.stderr, "Syncing %d-%d, capacity = %d, pivot = %d"%(time_low, time_high, capacity, time_low)
+            print >> sys.stderr, "Syncing %d-%d, capacity = %d, pivot = %d" % (time_low, time_high, capacity, time_low)
         return (time_low, time_high, 1, 0, bloom)
 
-    #choose a pivot, add all items capacity to the right. If too small, add items left of pivot
+    # choose a pivot, add all items capacity to the right. If too small, add items left of pivot
     @runtime_duration_warning(0.5)
     def dispersy_claim_sync_bloom_filter_right(self):
         bloom = BloomFilter(self.dispersy_sync_bloom_filter_bits, self.dispersy_sync_bloom_filter_error_rate, prefix=chr(int(random() * 256)))
@@ -633,25 +637,25 @@ class Community(object):
         if from_gbtime < 1:
             from_gbtime = int(self._random.random() * self.global_time)
 
-        #import sys
-        #print >> sys.stderr, "Pivot", from_gbtime
+        # import sys
+        # print >> sys.stderr, "Pivot", from_gbtime
 
         mostRecent = False
         if from_gbtime > 1:
-            #use from_gbtime - 1 to include from_gbtime
-            right,_ = self._select_and_fix(from_gbtime - 1, capacity, True)
+            # use from_gbtime - 1 to include from_gbtime
+            right, _ = self._select_and_fix(from_gbtime - 1, capacity, True)
 
-            #we did not select enough items from right side, increase nr of items for left
+            # we did not select enough items from right side, increase nr of items for left
             if len(right) < capacity:
                 to_select = capacity - len(right)
                 mostRecent = True
 
-                left,_ = self._select_and_fix(from_gbtime, to_select, False)
+                left, _ = self._select_and_fix(from_gbtime, to_select, False)
                 data = left + right
             else:
                 data = right
         else:
-            data,_ = self._select_and_fix(0, capacity, True)
+            data, _ = self._select_and_fix(0, capacity, True)
 
 
         if len(data) > 0:
@@ -663,19 +667,19 @@ class Community(object):
                 else:
                     time_high = max(from_gbtime, data[-1][0])
 
-            #we did not fill complete bloomfilter, assume we selected all items
+            # we did not fill complete bloomfilter, assume we selected all items
             else:
                 time_low = 1
                 time_high = self.acceptable_global_time
 
             bloom.add_keys(str(packet) for _, packet in data)
 
-            #print >> sys.stderr, "Syncing %d-%d, nr_packets = %d, capacity = %d, packets %d-%d"%(time_low, time_high, len(data), capacity, data[0][0], data[-1][0])
+            # print >> sys.stderr, "Syncing %d-%d, nr_packets = %d, capacity = %d, packets %d-%d"%(time_low, time_high, len(data), capacity, data[0][0], data[-1][0])
 
             return (time_low, time_high, 1, 0, bloom)
         return (1, self.acceptable_global_time, 1, 0, BloomFilter(8, 0.1, prefix='\x00'))
 
-    #instead of pivot + capacity, divide capacity to have 50/50 divivion around pivot
+    # instead of pivot + capacity, divide capacity to have 50/50 divivion around pivot
     @runtime_duration_warning(0.5)
     def dispersy_claim_sync_bloom_filter_50_50(self):
         bloom = BloomFilter(self.dispersy_sync_bloom_filter_bits, self.dispersy_sync_bloom_filter_error_rate, prefix=chr(int(random() * 256)))
@@ -688,7 +692,7 @@ class Community(object):
             from_gbtime = int(self._random.random() * self.global_time)
 
         # import sys
-        #print >> sys.stderr, "Pivot", from_gbtime
+        # print >> sys.stderr, "Pivot", from_gbtime
 
         mostRecent = False
         leastRecent = False
@@ -696,28 +700,28 @@ class Community(object):
         if from_gbtime > 1:
             to_select = capacity / 2
 
-            #use from_gbtime - 1 to include from_gbtime
-            right,_ = self._select_and_fix(from_gbtime - 1, to_select, True)
+            # use from_gbtime - 1 to include from_gbtime
+            right, _ = self._select_and_fix(from_gbtime - 1, to_select, True)
 
-            #we did not select enough items from right side, increase nr of items for left
+            # we did not select enough items from right side, increase nr of items for left
             if len(right) < to_select:
                 to_select = capacity - len(right)
                 mostRecent = True
 
-            left,_ = self._select_and_fix(from_gbtime, to_select, False)
+            left, _ = self._select_and_fix(from_gbtime, to_select, False)
 
-            #we did not select enough items from left side
+            # we did not select enough items from left side
             if len(left) < to_select:
                 leastRecent = True
 
-                #increase nr of items for right if we did select enough items on right side
+                # increase nr of items for right if we did select enough items on right side
                 if len(right) >= to_select:
                     to_select = capacity - len(right) - len(left)
                     right = right + self._select_and_fix(right[-1][0], to_select, True)[0]
             data = left + right
 
         else:
-            data,_ = self._select_and_fix(0, capacity, True)
+            data, _ = self._select_and_fix(0, capacity, True)
 
 
         if len(data) > 0:
@@ -732,19 +736,19 @@ class Community(object):
                 else:
                     time_high = max(from_gbtime, data[-1][0])
 
-            #we did not fill complete bloomfilter, assume we selected all items
+            # we did not fill complete bloomfilter, assume we selected all items
             else:
                 time_low = 1
                 time_high = self.acceptable_global_time
 
             bloom.add_keys(str(packet) for _, packet in data)
 
-            #print >> sys.stderr, "Syncing %d-%d, nr_packets = %d, capacity = %d, packets %d-%d"%(time_low, time_high, len(data), capacity, data[0][0], data[-1][0])
+            # print >> sys.stderr, "Syncing %d-%d, nr_packets = %d, capacity = %d, packets %d-%d"%(time_low, time_high, len(data), capacity, data[0][0], data[-1][0])
 
             return (time_low, time_high, 1, 0, bloom)
         return (1, self.acceptable_global_time, 1, 0, BloomFilter(8, 0.1, prefix='\x00'))
 
-    #instead of pivot + capacity, compare pivot - capacity and pivot + capacity to see which globaltime range is largest
+    # instead of pivot + capacity, compare pivot - capacity and pivot + capacity to see which globaltime range is largest
     @runtime_duration_warning(0.5)
     def _dispersy_claim_sync_bloom_filter_largest(self):
         if __debug__:
@@ -766,11 +770,11 @@ class Community(object):
                 from_gbtime = int(self._random.random() * self.global_time)
 
             if from_gbtime > 1 and self._nrsyncpackets >= capacity:
-                #use from_gbtime -1/+1 to include from_gbtime
-                right, rightdata = self._select_bloomfilter_range(syncable_messages, from_gbtime -1, capacity, True)
+                # use from_gbtime -1/+1 to include from_gbtime
+                right, rightdata = self._select_bloomfilter_range(syncable_messages, from_gbtime - 1, capacity, True)
 
-                #if right did not get to capacity, then we have less than capacity items in the database
-                #skip left
+                # if right did not get to capacity, then we have less than capacity items in the database
+                # skip left
                 if right[2] == capacity:
                     left, leftdata = self._select_bloomfilter_range(syncable_messages, from_gbtime + 1, capacity, False)
                     left_range = (left[1] or self.global_time) - left[0]
@@ -809,8 +813,8 @@ class Community(object):
                 bloom.add_keys(str(packet) for _, packet in data)
 
                 if __debug__:
-                    dprint(self.cid.encode("HEX"), " syncing %d-%d, nr_packets = %d, capacity = %d, packets %d-%d, pivot = %d"%(bloomfilter_range[0], bloomfilter_range[1], len(data), capacity, data[0][0], data[-1][0], from_gbtime))
-                    dprint(self.cid.encode("HEX"), " took %f (fakejoin %f, rangeselect %f, dataselect %f, bloomfill, %f"%(time()-t1, t2-t1, t3-t2, t4-t3, time()-t4))
+                    dprint(self.cid.encode("HEX"), " syncing %d-%d, nr_packets = %d, capacity = %d, packets %d-%d, pivot = %d" % (bloomfilter_range[0], bloomfilter_range[1], len(data), capacity, data[0][0], data[-1][0], from_gbtime))
+                    dprint(self.cid.encode("HEX"), " took %f (fakejoin %f, rangeselect %f, dataselect %f, bloomfill, %f" % (time() - t1, t2 - t1, t3 - t2, t4 - t3, time() - t4))
 
                 return (min(bloomfilter_range[0], acceptable_global_time), min(bloomfilter_range[1], acceptable_global_time), 1, 0, bloom)
 
@@ -821,7 +825,7 @@ class Community(object):
             dprint(self.cid.encode("HEX"), " NOT syncing no syncable messages")
         return (1, acceptable_global_time, 1, 0, BloomFilter(8, 0.1, prefix='\x00'))
 
-    #instead of pivot + capacity, compare pivot - capacity and pivot + capacity to see which globaltime range is largest
+    # instead of pivot + capacity, compare pivot - capacity and pivot + capacity to see which globaltime range is largest
     @runtime_duration_warning(0.5)
     def _dispersy_claim_sync_bloom_filter_modulo(self):
         syncable_messages = u", ".join(unicode(meta.database_id) for meta in self._meta_messages.itervalues() if isinstance(meta.distribution, SyncDistribution) and meta.distribution.priority > 32)
@@ -832,17 +836,17 @@ class Community(object):
             self._nrsyncpackets = list(self._dispersy.database.execute(u"SELECT count(*) FROM sync WHERE meta_message IN (%s) AND undone = 0 LIMIT 1" % (syncable_messages)))[0][0]
             modulo = int(ceil(self._nrsyncpackets / float(capacity)))
             if modulo > 1:
-                offset = randint(0, modulo-1)
+                offset = randint(0, modulo - 1)
                 packets = list(str(packet) for packet, in self._dispersy.database.execute(u"SELECT sync.packet FROM sync WHERE meta_message IN (%s) AND sync.undone = 0 AND (sync.global_time + ?) %% ? = 0" % syncable_messages, (offset, modulo)))
             else:
                 offset = 0
                 modulo = 1
                 packets = list(str(packet) for packet, in self._dispersy.database.execute(u"SELECT sync.packet FROM sync WHERE meta_message IN (%s) AND sync.undone = 0" % syncable_messages))
-            
+
             bloom.add_keys(packets)
 
             if __debug__:
-                dprint(self.cid.encode("HEX"), " syncing %d-%d, nr_packets = %d, capacity = %d, totalnr = %d"%(modulo, offset, self._nrsyncpackets, capacity, self._nrsyncpackets))
+                dprint(self.cid.encode("HEX"), " syncing %d-%d, nr_packets = %d, capacity = %d, totalnr = %d" % (modulo, offset, self._nrsyncpackets, capacity, self._nrsyncpackets))
 
             return (1, self.acceptable_global_time, modulo, offset, bloom)
 
@@ -850,7 +854,7 @@ class Community(object):
             dprint(self.cid.encode("HEX"), " NOT syncing no syncable messages")
         return (1, self.acceptable_global_time, 1, 0, BloomFilter(8, 0.1, prefix='\x00'))
 
-    def _select_and_fix(self, syncable_messages, global_time, to_select, higher = True):
+    def _select_and_fix(self, syncable_messages, global_time, to_select, higher=True):
         assert isinstance(syncable_messages, unicode)
         if higher:
             data = list(self._dispersy.database.execute(u"SELECT global_time, packet FROM sync WHERE meta_message IN (%s) AND undone = 0 AND global_time > ? ORDER BY global_time ASC LIMIT ?" % (syncable_messages),
@@ -863,7 +867,7 @@ class Community(object):
         if len(data) > to_select:
             fixed = True
 
-            #if last 2 packets are equal, then we need to drop those
+            # if last 2 packets are equal, then we need to drop those
             global_time = data[-1][0]
             del data[-1]
             while data and data[-1][0] == global_time:
@@ -874,15 +878,15 @@ class Community(object):
 
         return data, fixed
 
-    def _select_bloomfilter_range(self, syncable_messages, global_time, to_select, higher = True):
+    def _select_bloomfilter_range(self, syncable_messages, global_time, to_select, higher=True):
         data, fixed = self._select_and_fix(syncable_messages, global_time, to_select, higher)
 
         lowerfixed = True
         higherfixed = True
 
-        #if we selected less than to_select
+        # if we selected less than to_select
         if len(data) < to_select:
-            #calculate how many still remain
+            # calculate how many still remain
             to_select = to_select - len(data)
             if to_select > 25:
                 if higher:
@@ -893,20 +897,20 @@ class Community(object):
                     data = data + higherdata
 
         bloomfilter_range = [data[0][0], data[-1][0], len(data)]
-        #we can use the global_time as a min or max value for lower and upper bound
+        # we can use the global_time as a min or max value for lower and upper bound
         if higher:
-            #we selected items higher than global_time, make sure bloomfilter_range[0] is at least as low a global_time + 1
-            #we select all items higher than global_time, thus all items global_time + 1 are included
+            # we selected items higher than global_time, make sure bloomfilter_range[0] is at least as low a global_time + 1
+            # we select all items higher than global_time, thus all items global_time + 1 are included
             bloomfilter_range[0] = min(bloomfilter_range[0], global_time + 1)
 
-            #if not fixed and higher, then we have selected up to all know packets
+            # if not fixed and higher, then we have selected up to all know packets
             if not fixed:
                 bloomfilter_range[1] = self.acceptable_global_time
             if not lowerfixed:
                 bloomfilter_range[0] = 1
         else:
-            #we selected items lower than global_time, make sure bloomfilter_range[1] is at least as high as global_time -1
-            #we select all items lower than global_time, thus all items global_time - 1 are included
+            # we selected items lower than global_time, make sure bloomfilter_range[1] is at least as high as global_time -1
+            # we select all items lower than global_time, thus all items global_time - 1 are included
             bloomfilter_range[1] = max(bloomfilter_range[1], global_time - 1)
 
             if not fixed:
@@ -1089,7 +1093,7 @@ class Community(object):
         @rtype: int or long
         """
         now = time()
-        
+
         def acceptable_global_time_helper():
             options = sorted(global_time for global_time in (candidate.get_global_time(self) for candidate in self._dispersy.candidates if candidate.in_community(self, now) and candidate.is_any_active(now)) if global_time > 0)
 
@@ -1103,7 +1107,7 @@ class Community(object):
 
             # 07/05/12 Boudewijn: for an unknown reason values larger than 2^63-1 cause overflow
             # exceptions in the sqlite3 wrapper
-            return min(max(self._global_time, median_global_time) + self.dispersy_acceptable_global_time_range, 2**63-1)
+            return min(max(self._global_time, median_global_time) + self.dispersy_acceptable_global_time_range, 2 ** 63 - 1)
 
         # get opinions from all active candidates
         if self._acceptable_global_time_deadline < now:
@@ -1296,7 +1300,7 @@ class Community(object):
     def _iter_category(self, category):
         while True:
             no_result = True
-            
+
             keys = self._candidates.keys()
             key_index = 0
             key_value = None
@@ -1305,72 +1309,72 @@ class Community(object):
                 try:
                     key_value = keys[key_index]
                     candidate = self._candidates[key_value]
-                    
+
                     if candidate.in_community(self, time()) and candidate.is_any_active(time()) and category == candidate.get_category(self, time()):
                         no_result = False
                         yield candidate
-                        
+
                         keys = self._candidates.keys()
                         if key_value in keys:
                             key_index = keys.index(key_value)
-                        
+
                     key_index += 1
-                        
+
                 except IndexError:
                     break
-            
+
             if no_result:
                 yield None
-                
-    def _iter_categories(self, categories, once = False):
+
+    def _iter_categories(self, categories, once=False):
         while True:
             no_result = True
 
             keys = self._candidates.keys()
             key_index = 0
             key_value = None
-            
+
             while True:
                 try:
                     key_value = keys[key_index]
                     candidate = self._candidates[key_value]
-                    
+
                     if candidate.in_community(self, time()) and candidate.is_any_active(time()) and candidate.get_category(self, time()) in categories:
                         no_result = False
                         yield candidate
-                        
+
                         keys = self._candidates.keys()
                         if key_value in keys:
                             key_index = keys.index(key_value)
-                        
+
                     key_index += 1
-                        
+
                 except IndexError:
                     break
-                    
+
             if no_result:
                 yield None
-            
+
             if once:
                 break
-                
-    def _iter_bootstrap(self, once = False):
+
+    def _iter_bootstrap(self, once=False):
         while True:
             no_result = True
-            
+
             bootstrap_candidates = list(self._dispersy.bootstrap_candidates)
             for candidate in bootstrap_candidates:
                 if candidate.in_community(self, time()) and candidate.is_eligible_for_walk(self, time()):
                     no_result = False
                     yield candidate
-                    
+
             if no_result:
                 yield None
-                
+
             if once:
                 break
-                    
-    def _iter_a_or_b(self, a, b, prev_result = None):
+
+    def _iter_a_or_b(self, a, b, prev_result=None):
         r = random()
         result = a.next() if r <= .5 else b.next()
         if not result or result == prev_result:
@@ -1390,7 +1394,7 @@ class Community(object):
         shuffle(candidates)
         return iter(candidates)
 
-    def dispersy_yield_introduce_candidates(self, candidate = None):
+    def dispersy_yield_introduce_candidates(self, candidate=None):
         """
         Yield non-unique active candidates or None in round robin fashion.
 
@@ -1404,14 +1408,14 @@ class Community(object):
         prev_result = None
         while True:
             result = self._iter_a_or_b(self._walked_candidates, self._stumbled_candidates, prev_result)
-            
+
             if prev_result == result:
                 yield None
             else:
                 prev_result = result
                 if result == candidate:
                     continue
-                
+
                 yield result
 
     def dispersy_yield_walk_candidates(self):
@@ -1425,7 +1429,7 @@ class Community(object):
         # 13/02/12 Boudewijn: normal peers can not be visited multiple times within 30 seconds,
         # bootstrap peers can not be visited multiple times within 55 seconds.  this is handled by
         # the Candidate.is_eligible_for_walk(...) method
-        
+
         now = time()
         categories = {u"walk":[], u"stumble":[], u"intro":[], u"none":[]}
         for candidate in self._candidates.itervalues():
@@ -1440,12 +1444,12 @@ class Community(object):
             r = random()
 
             # 13/02/12 Boudewijn: we decrease the 1% chance to contact a bootstrap peer to .5%
-            if r <= .4975: # ~50%
+            if r <= .4975:  # ~50%
                 if walks:
                     if __debug__: dprint("yield [%2d:%2d:%2d walk   ] " % (len(walks), len(stumbles), len(intros)), walks[0])
                     yield walks.pop(0)
 
-            elif r <= .995: # ~50%
+            elif r <= .995:  # ~50%
                 if stumbles or intros:
                     while True:
                         if random() <= .5:
@@ -1460,22 +1464,22 @@ class Community(object):
                                 yield intros.pop(0)
                                 break
 
-            else: # ~.5%
+            else:  # ~.5%
                 candidate = self._bootstrap_candidates.next()
                 if candidate:
                     if __debug__: dprint("yield [%2d:%2d:%2d bootstr] " % (len(walks), len(stumbles), len(intros)), candidate)
                     yield candidate
-        
-        bootstrap_candidates = list(self._iter_bootstrap(once = True))
+
+        bootstrap_candidates = list(self._iter_bootstrap(once=True))
         shuffle(bootstrap_candidates)
-        
+
         for candidate in bootstrap_candidates:
             if candidate:
                 if __debug__: dprint("yield [%2d:%2d:%2d bootstr] " % (len(walks), len(stumbles), len(intros)), candidate)
             yield candidate
-            
+
         if __debug__: dprint("no candidates or bootstrap candidates available")
-    
+
     def create_candidate(self, sock_addr, tunnel, lan_address, wan_address, connection_type):
         """
         Creates and returns a new WalkCandidate instance.
@@ -1484,21 +1488,21 @@ class Community(object):
         assert isinstance(tunnel, bool)
         candidate = WalkCandidate(sock_addr, tunnel, lan_address, wan_address, connection_type)
         self.add_candidate(candidate)
-        
+
         if __debug__: dprint(candidate)
         return candidate
-    
+
     def add_candidate(self, candidate):
         assert candidate.sock_addr not in self._dispersy._bootstrap_candidates.iterkeys(), "none of the bootstrap candidates may be in self._candidates"
-        
+
         if candidate.sock_addr not in self._candidates:
             self._candidates[candidate.sock_addr] = candidate
-            
+
             self._dispersy.statistics.total_candidates_discovered += 1
             if len(candidate._timestamps) > 1:
                 self._dispersy.statistics.total_candidates_overlapped += 1
                 self._dispersy.statistics.dict_inc(self._dispersy.statistics.overlapping_stumble_candidates, str(self))
-    
+
     def get_candidate_mid(self, mid):
         try:
             member = MemberFromId(mid)
