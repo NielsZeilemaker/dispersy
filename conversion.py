@@ -86,6 +86,9 @@ class Conversion(object):
         assert isinstance(message, Message)
         raise NotImplementedError("The subclass must implement can_encode_message")
 
+    def can_decode_message(self, data):
+        raise NotImplementedError("The subclass must implement decode_message")
+
     def decode_meta_message(self, data):
         """
         Obtain the dispersy meta message from DATA.
@@ -247,6 +250,12 @@ class BinaryConversion(Conversion):
     def can_encode_message(self, message):
         assert isinstance(message, Message.Implementation), message
         return message.name in self._encode_message_map
+
+    def can_decode_message(self, data):
+        assert isinstance(data, str), type(data)
+        return (len(data) >= 23 and
+                data[:22] == self._prefix and
+                data[22] in self._decode_message_map)
 
     def define_meta_message(self, byte, meta, encode_payload_func, decode_payload_func):
         assert isinstance(byte, str)

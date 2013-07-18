@@ -363,7 +363,7 @@ class Message(MetaObject):
             if conversion:
                 self._conversion = conversion
             elif packet:
-                self._conversion = meta._community.get_conversion(packet[:22])
+                self._conversion = meta._community.get_conversion(packet)
             else:
                 for conversion in reversed(meta._community.get_conversions()):
                     if conversion.can_encode_message(self):
@@ -371,7 +371,7 @@ class Message(MetaObject):
                         break
                 else:
                     if __debug__: dprint("Unable to find conversion for ", self, " in ", self, meta._community.get_conversions())
-                    raise RuntimeError("No conversion found that can encode this message")
+                    raise RuntimeError("No conversion found that can encode this message (%s) in " % str(self))
 
             if not packet:
                 self._packet = self._conversion.encode_message(self, sign=sign)
