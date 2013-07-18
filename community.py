@@ -290,7 +290,7 @@ class Community(object):
         # define all available conversions
         conversions = self.initiate_conversions()
         assert len(conversions) > 0
-        self._conversions = dict((conversion.prefix, conversion) for conversion in conversions)
+        self._conversions = OrderedDict((conversion.prefix, conversion) for conversion in conversions)
         # the last conversion in the list will be used as the default conversion
         self._conversions[None] = conversions[-1]
 
@@ -1246,6 +1246,9 @@ class Community(object):
         if default:
             self._conversions[None] = conversion
         self._conversions[conversion.prefix] = conversion
+
+    def get_conversions(self):
+        return self._conversions.values()
 
     @documentation(Dispersy.take_step)
     def dispersy_take_step(self, allow_sync):
