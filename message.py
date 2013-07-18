@@ -370,7 +370,7 @@ class Message(MetaObject):
                         self._conversion = conversion
                         break
                 else:
-                    logger.warning("Unable to find conversion for %s in %s", self, meta._community.get_conversions())
+                    if __debug__: dprint("Unable to find conversion for ", self, " in ", self, meta._community.get_conversions())
                     raise RuntimeError("No conversion found that can encode this message")
 
             if not packet:
