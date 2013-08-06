@@ -51,7 +51,7 @@ from ..member import DummyMember, Member
 from ..message import Message, DropMessage
 
 if sys.platform == 'win32':
-    SOCKET_BLOCK_ERRORCODE = 10035    # WSAEWOULDBLOCK
+    SOCKET_BLOCK_ERRORCODE = 10035  # WSAEWOULDBLOCK
 else:
     SOCKET_BLOCK_ERRORCODE = errno.EWOULDBLOCK
 
@@ -124,7 +124,7 @@ class TrackerCommunity(Community):
     @property
     def dispersy_acceptable_global_time_range(self):
         # we will accept the full 64 bit global time range
-        return 2**64 - self._global_time
+        return 2 ** 64 - self._global_time
 
     def update_strikes(self, now):
         # does the community have any active candidates
@@ -144,21 +144,12 @@ class TrackerCommunity(Community):
 
     def get_conversion(self, prefix=None):
         if not prefix in self._conversions:
-
             # the dispersy version MUST BE available.  Currently we
             # only support \x00: BinaryConversion
             if prefix[0] == "\x00":
-                self._conversions[prefix] = BinaryTrackerConversion(self, prefix[1])
-
+                self.add_conversion(BinaryTrackerConversion(self, prefix[1]))
             else:
                 raise KeyError("Unknown conversion")
-
-            # use highest version as default
-            if None in self._conversions:
-                if self._conversions[None].version < self._conversions[prefix].version:
-                    self._conversions[None] = self._conversions[prefix]
-            else:
-                self._conversions[None] = self._conversions[prefix]
 
         return self._conversions[prefix]
 
@@ -220,7 +211,7 @@ class TrackerDispersy(Dispersy):
         kargs["singleton_placeholder"] = Dispersy
         return super(TrackerDispersy, cls).get_instance(*args, **kargs)
 
-    def __init__(self, callback, working_directory, silent = False):
+    def __init__(self, callback, working_directory, silent=False):
         super(TrackerDispersy, self).__init__(callback, working_directory, u":memory:")
 
         # non-autoload nodes
@@ -277,7 +268,7 @@ class TrackerDispersy(Dispersy):
             for candidate, packet in packets:
                 cid = packet[2:22]
 
-                if not cid in self._communities and False:#candidate.sock_addr[0] in self._non_autoload:
+                if not cid in self._communities and False:  # candidate.sock_addr[0] in self._non_autoload:
                     if __debug__:
                         dprint("drop a ", len(packet), " byte packet (received from non-autoload node) from ", candidate, level="warning", force=1)
                         self._statistics.dict_inc(self._statistics.drop, "_convert_packets_into_batch:from bootstrap node for unloaded community")
