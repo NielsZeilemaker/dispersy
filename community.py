@@ -1660,21 +1660,193 @@ class Community(object):
         """
         return self._meta_messages.values()
 
-    @abstractmethod
     def initiate_meta_messages(self):
         """
-        Create the meta messages for one community instance.
+        Create the meta messages for this community instance.
 
-        This method is called once for each community when it is created.  The resulting meta
-        messages can be obtained by either get_meta_message(name) or get_meta_messages().
+        This method is called once when the community is created.  The resulting meta messages can be obtained
+        by either get_meta_message(name) or get_meta_messages().
 
-        To distinct the meta messages that the community provides from those that Dispersy provides,
-        none of the messages may have a name that starts with 'dispersy-'.
+        Since these meta messages will be used alongside the meta messages that each community
+        provides, all message names are prefixed with 'dispersy-' to ensure that the names are
+        unique.
+
+        To differentiate the meta messages that the community provides from those that Dispersy provides, none of the
+        messages added by the user should have a name that starts with 'dispersy-'.
 
         @return: The new meta messages.
         @rtype: [Message]
+
         """
-        pass
+
+        messages = [
+            Message(self, u"dispersy-identity",
+                    MemberAuthentication(encoding="bin"),
+                    PublicResolution(),
+                    LastSyncDistribution(synchronization_direction=u"ASC", priority=16, history_size=1),
+                    CommunityDestination(node_count=0),
+                    IdentityPayload(),
+                    self._generic_timeline_check,
+                    self.on_identity),
+            Message(self, u"dispersy-signature-request",
+                    NoAuthentication(),
+                    PublicResolution(),
+                    DirectDistribution(),
+                    CandidateDestination(),
+                    SignatureRequestPayload(),
+                    self.check_signature_request,
+                    self.on_signature_request),
+            Message(self, u"dispersy-signature-response",
+                    NoAuthentication(),
+                    PublicResolution(),
+                    DirectDistribution(),
+                    CandidateDestination(),
+                    SignatureResponsePayload(),
+                    self.check_signature_response,
+                    self.on_signature_response),
+            Message(self, u"dispersy-authorize",
+                    MemberAuthentication(),
+                    PublicResolution(),
+                    FullSyncDistribution(enable_sequence_number=True, synchronization_direction=u"ASC", priority=128),
+                    CommunityDestination(node_count=10),
+                    AuthorizePayload(),
+                    self._generic_timeline_check,
+                    self.on_authorize),
+            Message(self, u"dispersy-revoke",
+                    MemberAuthentication(),
+                    PublicResolution(),
+                    FullSyncDistribution(enable_sequence_number=True, synchronization_direction=u"ASC", priority=128),
+                    CommunityDestination(node_count=10),
+                    RevokePayload(),
+                    self._generic_timeline_check,
+                    self.on_revoke),
+            Message(self, u"dispersy-undo-own",
+                    MemberAuthentication(),
+                    PublicResolution(),
+                    FullSyncDistribution(enable_sequence_number=True, synchronization_direction=u"ASC", priority=128),
+                    CommunityDestination(node_count=10),
+                    UndoPayload(),
+                    self.check_undo,
+                    self.on_undo),
+            Message(self, u"dispersy-undo-other",
+                    MemberAuthentication(),
+                    LinearResolution(),
+                    FullSyncDistribution(enable_sequence_number=True, synchronization_direction=u"ASC", priority=128),
+                    CommunityDestination(node_count=10),
+                    UndoPayload(),
+                    self.check_undo,
+                    self.on_undo),
+            Message(self, u"dispersy-destroy-self",
+                    MemberAuthentication(),
+                    LinearResolution(),
+                    FullSyncDistribution(enable_sequence_number=False, synchronization_direction=u"ASC", priority=192),
+                    CommunityDestination(node_count=50),
+                    DestroyCommunityPayload(),
+                    self._generic_timeline_check,
+                    self.on_destroy_community),
+            Message(self, u"dispersy-dynamic-settings",
+                    MemberAuthentication(),
+                    LinearResolution(),
+                    FullSyncDistribution(enable_sequence_number=True, synchronization_direction=u"DESC", priority=191),
+                    CommunityDestination(node_count=10),
+                    DynamicSettingsPayload(),
+                    self._generic_timeline_check,
+                    self.dispersy_on_dynamic_settings),
+
+            #
+            # when something is missing, a dispersy-missing-... message can be used to request
+            # it from another peer
+            #
+
+            # when we have a member id (20 byte sha1 of the public key) but not the public key
+            Message(self, u"dispersy-missing-identity",
+                    NoAuthentication(),
+                    PublicResolution(),
+                    DirectDistribution(),
+                    CandidateDestination(),
+                    MissingIdentityPayload(),
+                    self._generic_timeline_check,
+                    self.on_missing_identity),
+
+            # when we are missing one or more SyncDistribution messages in a certain sequence
+            Message(self, u"dispersy-missing-sequence",
+                    NoAuthentication(),
+                    PublicResolution(),
+                    DirectDistribution(),
+                    CandidateDestination(),
+                    MissingSequencePayload(),
+                    self._generic_timeline_check,
+                    self.on_missing_sequence,
+                    batch=BatchConfiguration(max_window=0.1)),
+
+            # when we have a reference to a message that we do not have.  a reference consists
+            # of the self identifier, the member identifier, and the global time
+            Message(self, u"dispersy-missing-message",
+                    NoAuthentication(),
+                    PublicResolution(),
+                    DirectDistribution(),
+                    CandidateDestination(),
+                    MissingMessagePayload(),
+                    self._generic_timeline_check,
+                    self.on_missing_message),
+
+            # when we might be missing a dispersy-authorize message
+            Message(self, u"dispersy-missing-proof",
+                    NoAuthentication(),
+                    PublicResolution(),
+                    DirectDistribution(),
+                    CandidateDestination(),
+                    MissingProofPayload(),
+                    self._generic_timeline_check,
+                    self.on_missing_proof),
+
+            # when we have a reference to a LastSyncDistribution that we do not have.  a
+            # reference consists of the self identifier and the member identifier
+            Message(self, u"dispersy-missing-last-message",
+                    NoAuthentication(),
+                    PublicResolution(),
+                    DirectDistribution(),
+                    CandidateDestination(),
+                    MissingLastMessagePayload(),
+                    self._generic_timeline_check,
+                    self.on_missing_last_message),
+        ]
+
+        if self.dispersy_enable_candidate_walker_responses:
+            messages.extend([Message(self, u"dispersy-introduction-request",
+                                     MemberAuthentication(),
+                                     PublicResolution(),
+                                     DirectDistribution(),
+                                     CandidateDestination(),
+                                     IntroductionRequestPayload(),
+                                     self.check_introduction_request,
+                                     self.on_introduction_request),
+                             Message(self, u"dispersy-introduction-response",
+                                     MemberAuthentication(),
+                                     PublicResolution(),
+                                     DirectDistribution(),
+                                     CandidateDestination(),
+                                     IntroductionResponsePayload(),
+                                     self.check_introduction_response,
+                                     self.on_introduction_response),
+                             Message(self, u"dispersy-puncture-request",
+                                     NoAuthentication(),
+                                     PublicResolution(),
+                                     DirectDistribution(),
+                                     CandidateDestination(),
+                                     PunctureRequestPayload(),
+                                     self.check_puncture_request,
+                                     self.on_puncture_request),
+                             Message(self, u"dispersy-puncture",
+                                     MemberAuthentication(),
+                                     PublicResolution(),
+                                     DirectDistribution(),
+                                     CandidateDestination(),
+                                     PuncturePayload(),
+                                     self.check_puncture,
+                                     self.on_puncture)])
+
+        return messages
 
     @abstractmethod
     def initiate_conversions(self):
