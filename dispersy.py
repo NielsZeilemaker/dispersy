@@ -2583,24 +2583,6 @@ ORDER BY global_time""", (meta.database_id, member_database_id)))
         logger.debug("%s success", community.cid.encode("HEX"))
 
 
-    def _claim_master_member_sequence_number(self, community, meta):
-        """
-        Tries to guess the most recent sequence number used by the master member for META in
-        COMMUNITY.
-
-        This is a risky method because sequence numbers must be unique, however, we can not
-        guarantee that two peers do not claim a sequence number for the master member at around the
-        same time.  Unfortunately we can not overcome this problem in a distributed fashion.
-
-        Also note that calling this method twice will give identital values.  Ensure that the
-        message is updated locally before claiming another value to ensure different sequence
-        numbers are used.
-        """
-        assert isinstance(meta.distribution, FullSyncDistribution), "currently only FullSyncDistribution allows sequence numbers"
-        sequence_number, = self._database.execute(u"SELECT COUNT(*) FROM sync WHERE member = ? AND sync.meta_message = ?",
-                                                  (community.master_member.database_id, meta.database_id)).next()
-        return sequence_number + 1
-
     def _watchdog(self):
         """
         Periodically called to commit database changes to disk.

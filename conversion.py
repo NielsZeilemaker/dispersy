@@ -483,7 +483,7 @@ class NoDefBinaryConversion(Conversion):
         for member, message, permission in message.payload.permission_triplets:
             public_key = member.public_key
             assert isinstance(public_key, str)
-            assert message.name in self._encode_message_map
+            assert message.name in self._encode_message_map, (self._encode_message_map.keys(), message.name)
             message_id = self._encode_message_map[message.name].byte
             assert isinstance(message_id, str)
             assert len(message_id) == 1

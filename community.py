@@ -15,14 +15,17 @@ from time import time
 
 from .authentication import NoAuthentication, MemberAuthentication
 from .bloomfilter import BloomFilter
+# TODO(emilon): fix this
+from .cache import *
 from .candidate import WalkCandidate, BootstrapCandidate
 from .conversion import BinaryConversion, DefaultConversion
 from .decorator import documentation, runtime_duration_warning, attach_runtime_statistics
+from .destination import CommunityDestination, CandidateDestination
 from .dispersy import Dispersy
-from .distribution import SyncDistribution, GlobalTimePruning
+from .distribution import SyncDistribution, GlobalTimePruning, LastSyncDistribution, DirectDistribution, FullSyncDistribution
 from .logger import get_logger
 from .member import DummyMember, Member
-from .message import BatchConfiguration, Message
+from .message import BatchConfiguration, Message, Packet, DropMessage, DelayMessageByProof, DelayMessageByMissingMessage
 from .payload import (AuthorizePayload, RevokePayload, UndoPayload, DestroyCommunityPayload, DynamicSettingsPayload,
                       IdentityPayload, MissingIdentityPayload, IntroductionRequestPayload, IntroductionResponsePayload,
                       PunctureRequestPayload, PuncturePayload, MissingMessagePayload, MissingLastMessagePayload,
@@ -31,13 +34,6 @@ from .requestcache import RequestCache
 from .resolution import PublicResolution, LinearResolution, DynamicResolution
 from .statistics import CommunityStatistics
 from .timeline import Timeline
-from .distribution import LastSyncDistribution, DirectDistribution
-from .destination import CommunityDestination, CandidateDestination
-from .message import (Packet, Message, DropMessage, DelayMessage, DelayMessageByProof, DelayMessageBySequence,
-                      DelayMessageByMissingMessage, DropPacket, DelayPacket)
-from .statistics import DispersyStatistics
-from .distribution import (SyncDistribution, FullSyncDistribution, LastSyncDistribution, DirectDistribution,
-                           GlobalTimePruning)
 
 
 try:
@@ -121,10 +117,10 @@ class Community(object):
             assert community.database_id == community_database_id
 
             # create the dispersy-identity for the master member
-            message = community.create_dispersy_identity(sign_with_master=True)
+            message = community.create_identity(sign_with_master=True)
 
             # create my dispersy-identity
-            message = community.create_dispersy_identity()
+            message = community.create_identity()
 
             # authorize MY_MEMBER
             permission_triplets = []
@@ -157,7 +153,7 @@ class Community(object):
                                 permission_triplets.append((my_member, message, allowed))
 
             if permission_triplets:
-                community.create_dispersy_authorize(permission_triplets, sign_with_master=True, forward=False)
+                community.create_authorize(permission_triplets, sign_with_master=True, forward=False)
 
         except:
             # undo the insert info the database
@@ -219,7 +215,7 @@ class Community(object):
             assert community.database_id == community_database_id
 
             # create my dispersy-identity
-            community.create_dispersy_identity()
+            community.create_identity()
 
         except:
             # undo the insert info the database
@@ -1712,7 +1708,7 @@ class Community(object):
                     UndoPayload(),
                     self.check_undo,
                     self.on_undo),
-            Message(self, u"dispersy-destroy-self",
+            Message(self, u"dispersy-destroy-community",
                     MemberAuthentication(),
                     LinearResolution(),
                     FullSyncDistribution(enable_sequence_number=False, synchronization_direction=u"ASC", priority=192),
@@ -2056,7 +2052,7 @@ class Community(object):
             # 30/10/12 Niels: additionally check if both our lan_addresses are the same. They should
             # be if we're sending it to ourself. Not checking wan_address as that is subject to change.
             if community.request_cache.has(IntroductionRequestCache.create_identifier(message.payload.identifier)) and \
-                    self._lan_address == message.payload.source_lan_address:
+                    self._dispersy._lan_address == message.payload.source_lan_address:
                 logger.debug("dropping dispersy-introduction-request, this identifier is already in use.")
                 yield DropMessage(message, "Duplicate identifier from %s (most likely received from our self)" % str(message.candidate))
                 continue
@@ -2071,7 +2067,7 @@ class Community(object):
         responses = []
         requests = []
         now = time()
-        self._statistics.walk_advice_incoming_request += len(messages)
+        self._dispersy._statistics.walk_advice_incoming_request += len(messages)
 
         #
         # make all candidates available for introduction
@@ -2085,14 +2081,14 @@ class Community(object):
             payload = message.payload
 
             # apply vote to determine our WAN address
-            self.wan_address_vote(payload.destination_address, candidate)
+            self._dispersy.wan_address_vote(payload.destination_address, candidate)
 
             # until we implement a proper 3-way handshake we are going to assume that the creator of
             # this message is associated to this candidate
             candidate.associate(message.authentication.member)
 
             # update sender candidate
-            source_lan_address, source_wan_address = self.estimate_lan_and_wan_addresses(candidate.sock_addr, payload.source_lan_address, payload.source_wan_address)
+            source_lan_address, source_wan_address = self._dispersy.estimate_lan_and_wan_addresses(candidate.sock_addr, payload.source_lan_address, payload.source_wan_address)
             candidate.update(candidate.tunnel, source_lan_address, source_wan_address, payload.connection_type)
             candidate.stumble(now)
             community.add_candidate(candidate)
@@ -2122,7 +2118,7 @@ class Community(object):
                 self._statistics.walk_advice_outgoing_response += 1
 
                 # create introduction response
-                responses.append(meta_introduction_response.impl(authentication=(community.my_member,), distribution=(community.global_time,), destination=(candidate,), payload=(candidate.sock_addr, self._lan_address, self._wan_address, introduced.lan_address, introduced.wan_address, self._connection_type, introduced.tunnel, payload.identifier)))
+                responses.append(meta_introduction_response.impl(authentication=(community.my_member,), distribution=(community.global_time,), destination=(candidate,), payload=(candidate.sock_addr, self._dispersy._lan_address, self._dispersy._wan_address, introduced.lan_address, introduced.wan_address, self._dispersy._connection_type, introduced.tunnel, payload.identifier)))
 
                 # create puncture request
                 requests.append(meta_puncture_request.impl(distribution=(community.global_time,), destination=(introduced,), payload=(source_lan_address, source_wan_address, payload.identifier)))
@@ -2131,12 +2127,12 @@ class Community(object):
                 logger.debug("responding to %s without an introduction %s", candidate, type(community))
 
                 none = ("0.0.0.0", 0)
-                responses.append(meta_introduction_response.impl(authentication=(community.my_member,), distribution=(community.global_time,), destination=(candidate,), payload=(candidate.sock_addr, self._lan_address, self._wan_address, none, none, self._connection_type, False, payload.identifier)))
+                responses.append(meta_introduction_response.impl(authentication=(community.my_member,), distribution=(community.global_time,), destination=(candidate,), payload=(candidate.sock_addr, self._dispersy._lan_address, self._dispersy._wan_address, none, none, self._dispersy._connection_type, False, payload.identifier)))
 
         if responses:
-            self._forward(responses)
+            self._dispersy._forward(responses)
         if requests:
-            self._forward(requests)
+            self._dispersy._forward(requests)
 
         #
         # process the bloom filter part of the request
@@ -2178,8 +2174,8 @@ class Community(object):
 
                 if packets:
                     logger.debug("syncing %d packets (%d bytes) to %s", len(packets), sum(len(packet) for packet in packets), message.candidate)
-                    self._statistics.dict_inc(self._statistics.outgoing, u"-sync-", len(packets))
-                    self._endpoint.send([message.candidate], packets)
+                    self._dispersy._statistics.dict_inc(self._statistics.outgoing, u"-sync-", len(packets))
+                    self._dispersy._endpoint.send([message.candidate], packets)
 
     def check_undo(self, messages):
         # Note: previously all MESSAGES have been checked to ensure that the sequence numbers are
@@ -2271,8 +2267,8 @@ class Community(object):
                         self.declare_malicious_member(member, [msg, message])
 
                         # the sender apparently does not have the offending dispersy-undo message, lets give
-                        self._statistics.dict_inc(self._statistics.outgoing, msg.name)
-                        self._endpoint.send([message.candidate], [msg.packet])
+                        self._dispersy._statistics.dict_inc(self._statistics.outgoing, msg.name)
+                        self._dispersy._endpoint.send([message.candidate], [msg.packet])
 
                         if member == community.my_member:
                             logger.error("fatal error.  apparently we are malicious")
@@ -2329,18 +2325,18 @@ class Community(object):
                     yield DropMessage(message, "invalid WAN introduction address [is_valid_address]")
                     continue
 
-                if message.payload.wan_introduction_address == self._wan_address:
+                if message.payload.wan_introduction_address == self._dispersy._wan_address:
                     yield DropMessage(message, "invalid WAN introduction address [introduced to myself]")
                     continue
 
                 # if WAN ip-addresses match, check if the LAN address is not the same
-                if message.payload.wan_introduction_address[0] == self._wan_address[0] and message.payload.lan_introduction_address == self._lan_address:
+                if message.payload.wan_introduction_address[0] == self._dispersy._wan_address[0] and message.payload.lan_introduction_address == self._dispersy._lan_address:
                     yield DropMessage(message, "invalid LAN introduction address [introduced to myself]")
                     continue
 
             # if we do not know the WAN address, make sure that the LAN address is not the same
             elif not message.payload.lan_introduction_address == ("0.0.0.0", 0):
-                if message.payload.lan_introduction_address == self._lan_address:
+                if message.payload.lan_introduction_address == self._dispersy._lan_address:
                     yield DropMessage(message, "invalid LAN introduction address [introduced to myself]")
                     continue
 
@@ -2354,7 +2350,7 @@ class Community(object):
             payload = message.payload
 
             # modify either the senders LAN or WAN address based on how we perceive that node
-            source_lan_address, source_wan_address = self.estimate_lan_and_wan_addresses(message.candidate.sock_addr, payload.source_lan_address, payload.source_wan_address)
+            source_lan_address, source_wan_address = self._dispersy.estimate_lan_and_wan_addresses(message.candidate.sock_addr, payload.source_lan_address, payload.source_wan_address)
 
             if isinstance(message.candidate, WalkCandidate):
                 candidate = message.candidate
@@ -2376,7 +2372,7 @@ class Community(object):
             self._statistics.walk_success += 1
             if isinstance(candidate, BootstrapCandidate):
                 self._statistics.walk_bootstrap_success += 1
-            self._statistics.dict_inc(self._statistics.incoming_introduction_response, candidate.sock_addr)
+            self._dispersy._statistics.dict_inc(self._statistics.incoming_introduction_response, candidate.sock_addr)
 
             # get cache object linked to this request and stop timeout from occurring
             cache = community.request_cache.get(IntroductionRequestCache.create_identifier(message.payload.identifier))
@@ -2392,7 +2388,7 @@ class Community(object):
 
                 # get or create the introduced candidate
                 self._statistics.walk_advice_incoming_response += 1
-                sock_introduction_addr = lan_introduction_address if wan_introduction_address[0] == self._wan_address[0] else wan_introduction_address
+                sock_introduction_addr = lan_introduction_address if wan_introduction_address[0] == self._dispersy._wan_address[0] else wan_introduction_address
                 introduce = community.get_candidate(sock_introduction_addr, replace=False, lan_address=lan_introduction_address)
                 if introduce is None:
                     # create candidate but set its state to inactive to ensure that it will not be
@@ -2512,7 +2508,7 @@ class Community(object):
         request = meta_request.impl(authentication=(community.my_member,),
                                     distribution=(community.global_time,),
                                     destination=(destination,),
-                                    payload=(destination.sock_addr, self._lan_address, self._wan_address, advice, self._connection_type, sync, cache.number))
+                                    payload=(destination.sock_addr, self._dispersy._lan_address, self._dispersy._wan_address, advice, self._dispersy._connection_type, sync, cache.number))
 
         if forward:
             if sync:
@@ -2526,9 +2522,9 @@ class Community(object):
                 self._statistics.walk_bootstrap_attempt += 1
             if request.payload.advice:
                 self._statistics.walk_advice_outgoing_request += 1
-            self._statistics.dict_inc(self._statistics.outgoing_introduction_request, destination.sock_addr)
+            self._dispersy._statistics.dict_inc(self._statistics.outgoing_introduction_request, destination.sock_addr)
 
-            self._forward([request])
+            self._dispersy._forward([request])
 
         return request
 
@@ -2623,11 +2619,11 @@ class Community(object):
                 yield DropMessage(message, "invalid WAN walker address [is_valid_address]")
                 continue
 
-            if message.payload.wan_walker_address == self._wan_address:
+            if message.payload.wan_walker_address == self._dispersy._wan_address:
                 yield DropMessage(message, "invalid WAN walker address [puncture myself]")
                 continue
 
-            if message.payload.wan_walker_address[0] == self._wan_address[0] and message.payload.lan_walker_address == self._lan_address:
+            if message.payload.wan_walker_address[0] == self._dispersy._wan_address[0] and message.payload.lan_walker_address == self._dispersy._lan_address:
                 yield DropMessage(message, "invalid LAN walker address [puncture myself]")
                 continue
 
@@ -2645,17 +2641,17 @@ class Community(object):
 
             # we are asked to send a message to a -possibly- unknown peer get the actual candidate
             # or create a dummy candidate
-            sock_addr = lan_walker_address if wan_walker_address[0] == self._wan_address[0] else wan_walker_address
+            sock_addr = lan_walker_address if wan_walker_address[0] == self._dispersy._wan_address[0] else wan_walker_address
             candidate = community.get_candidate(sock_addr, replace=False, lan_address=lan_walker_address)
             if candidate is None:
                 # assume that tunnel is disabled
                 tunnel = False
                 candidate = Candidate(sock_addr, tunnel)
 
-            punctures.append(meta_puncture.impl(authentication=(community.my_member,), distribution=(community.global_time,), destination=(candidate,), payload=(self._lan_address, self._wan_address, message.payload.identifier)))
+            punctures.append(meta_puncture.impl(authentication=(community.my_member,), distribution=(community.global_time,), destination=(candidate,), payload=(self._dispersy._lan_address, self._dispersy._wan_address, message.payload.identifier)))
             logger.debug("%s asked us to send a puncture to %s", message.candidate, candidate)
 
-        self._forward(punctures)
+        self._dispersy._forward(punctures)
 
     def check_puncture(self, messages):
         community = messages[0].community
@@ -2682,7 +2678,7 @@ class Community(object):
             # we can match this source address (message.candidate.sock_addr) to the candidate and
             # modify the LAN or WAN address that has been proposed.
             sock_addr = message.candidate.sock_addr
-            lan_address, wan_address = self.estimate_lan_and_wan_addresses(sock_addr, message.payload.source_lan_address, message.payload.source_wan_address)
+            lan_address, wan_address = self._dispersy.estimate_lan_and_wan_addresses(sock_addr, message.payload.source_lan_address, message.payload.source_wan_address)
 
             if not (lan_address == ("0.0.0.0", 0) or wan_address == ("0.0.0.0", 0)):
                 assert self.is_valid_address(lan_address), lan_address
@@ -2722,7 +2718,7 @@ class Community(object):
 
             meta = community.get_meta_message(u"dispersy-missing-message")
             request = meta.impl(distribution=(community.global_time,), destination=(candidate,), payload=(member, [global_time]))
-            self._forward([request])
+            self._dispersy._forward([request])
 
             sendRequest = True
 
@@ -2749,8 +2745,8 @@ class Community(object):
         for candidate, responses in groupby(responses, key=lambda tup: tup[0]):
             # responses is an iterator, for __debug__ we need a list
             responses = list(responses)
-            self._statistics.dict_inc(self._statistics.outgoing, u"-missing-message", len(responses))
-            self._endpoint.send([candidate], [packet for _, packet in responses])
+            self._dispersy._statistics.dict_inc(self._statistics.outgoing, u"-missing-message", len(responses))
+            self._dispersy._endpoint.send([candidate], [packet for _, packet in responses])
 
     def create_missing_last_message(self, community, candidate, member, message, count_, response_func=None, response_args=(), timeout=10.0):
         if __debug__:
@@ -2774,7 +2770,7 @@ class Community(object):
 
             meta = community.get_meta_message(u"dispersy-missing-last-message")
             request = meta.impl(distribution=(community.global_time,), destination=(candidate,), payload=(member, message, count_))
-            self._forward([request])
+            self._dispersy._forward([request])
             sendRequest = True
 
         cache.callbacks.append((response_func, response_args))
@@ -2785,10 +2781,10 @@ class Community(object):
             payload = message.payload
             packets = [str(packet) for packet, in list(self._database.execute(u"SELECT packet FROM sync WHERE community = ? AND member = ? AND meta_message = ? ORDER BY global_time DESC LIMIT ?",
                                                                               (message.community.database_id, payload.member.database_id, payload.message.database_id, payload.count)))]
-            self._statistics.dict_inc(self._statistics.outgoing, u"-missing-last-message", len(packets))
-            self._endpoint.send([message.candidate], packets)
+            self._dispersy._statistics.dict_inc(self._statistics.outgoing, u"-missing-last-message", len(packets))
+            self._dispersy._endpoint.send([message.candidate], packets)
 
-    def create_identity(self, community, sign_with_master=False, store=True, update=True):
+    def create_identity(self, sign_with_master=False, store=True, update=True):
         """
         Create a dispersy-identity message for self.my_member.
 
@@ -2797,38 +2793,32 @@ class Community(object):
         change over time as this message is only transferred on demand, and not during the sync
         phase.
 
-        @param community: The community for wich the dispersy-identity message will be created.
-        @type community: Community
-
         @param store: When True the messages are stored (as defined by their message distribution
          policy) in the local dispersy database.  This parameter should (almost always) be True, its
          inclusion is mostly to allow certain debugging scenarios.
         @type store: bool
         """
-        if __debug__:
-            from .community import Community
-        assert isinstance(community, Community)
         assert isinstance(store, bool)
-        meta = community.get_meta_message(u"dispersy-identity")
+        meta = self.get_meta_message(u"dispersy-identity")
 
         # 13/03/12 Boudewijn: currently create_identity is either called when joining or creating a
-        # community.  when creating a community self._global_time should be 1, since the master
-        # member dispersy-identity message has just been created.  when joining a community
+        # self.  when creating a self self._global_time should be 1, since the master
+        # member dispersy-identity message has just been created.  when joining a self
         # self._global time should be 0, since no messages have been either received or created.
         #
         # as a security feature we force that the global time on dispersy-identity messages are
         # always 2 or higher (except for master members who should get global time 1)
-        global_time = community.claim_global_time()
+        global_time = self.claim_global_time()
         while global_time < 2:
-            global_time = community.claim_global_time()
+            global_time = self.claim_global_time()
 
-        message = meta.impl(authentication=(community.master_member if sign_with_master else community.my_member,),
+        message = meta.impl(authentication=(self.master_member if sign_with_master else self.my_member,),
                             distribution=(global_time,))
-        self.store_update_forward([message], store, update, False)
+        self._dispersy.store_update_forward([message], store, update, False)
         return message
 
 
-    def create_missing_identity(self, community, candidate, dummy_member, response_func=None, response_args=(), timeout=4.5, forward=True):
+    def create_missing_identity(self, candidate, dummy_member, response_func=None, response_args=(), timeout=4.5, forward=True):
         """
         Create a dispersy-missing-identity message.
 
@@ -2839,8 +2829,6 @@ class Community(object):
         # @return True if actual request is made
         """
         if __debug__:
-            from .community import Community
-            assert isinstance(community, Community)
             assert isinstance(candidate, Candidate)
             assert isinstance(dummy_member, DummyMember)
             assert response_func is None or callable(response_func)
@@ -2850,14 +2838,14 @@ class Community(object):
 
         sendRequest = False
 
-        cache = community.request_cache.get(MissingMemberCache.create_identifier(dummy_member))
+        cache = self.request_cache.get(MissingMemberCache.create_identifier(dummy_member))
         if not cache:
-            cache = community.request_cache.add(MissingMemberCache(timeout, dummy_member))
+            cache = self.request_cache.add(MissingMemberCache(timeout, dummy_member))
             logger.debug("new cache: %s", cache)
 
-            meta = community.get_meta_message(u"dispersy-missing-identity")
-            request = meta.impl(distribution=(community.global_time,), destination=(candidate,), payload=(dummy_member.mid,))
-            self._forward([request])
+            meta = self.get_meta_message(u"dispersy-missing-identity")
+            request = meta.impl(distribution=(self.global_time,), destination=(candidate,), payload=(dummy_member.mid,))
+            self._dispersy._forward([request])
 
             sendRequest = True
 
@@ -2885,14 +2873,14 @@ class Community(object):
             community_id = message.community.database_id
 
             # we are assuming that no more than 10 members have the same sha1 digest.
-            for member_id in [member_id for member_id, in self._database.execute(sql_member, (buffer(mid),))]:
-                packets = [str(packet) for packet, in self._database.execute(sql_packet,
+            for member_id in [member_id for member_id, in self._dispersy._database.execute(sql_member, (buffer(mid),))]:
+                packets = [str(packet) for packet, in self._dispersy._database.execute(sql_packet,
                                                                              (community_id, member_id, meta_id))]
 
                 if packets:
                     logger.debug("responding with %d identity messages", len(packets))
-                    self._statistics.dict_inc(self._statistics.outgoing, u"-dispersy-identity", len(packets))
-                    self._endpoint.send([message.candidate], packets)
+                    self._dispersy._statistics.dict_inc(self._statistics.outgoing, u"-dispersy-identity", len(packets))
+                    self._dispersy._endpoint.send([message.candidate], packets)
 
                 else:
                     assert not message.payload.mid == message.community.my_member.mid, "we should always have our own dispersy-identity"
@@ -2973,7 +2961,7 @@ class Community(object):
                                   payload=(cache.number, message))
 
         logger.debug("asking %s", [member.mid.encode("HEX") for member in members])
-        self._forward([cache.request])
+        self._dispersy._forward([cache.request])
         return cache
 
     def create_missing_sequence(self, community, candidate, member, message, missing_low, missing_high, response_func=None, response_args=(), timeout=10.0):
@@ -3004,7 +2992,7 @@ class Community(object):
             logger.debug("%s sending missing-sequence %s %s [%d:%d]", candidate, member.mid.encode("HEX"), message.name, missing_low, missing_high)
             meta = community.get_meta_message(u"dispersy-missing-sequence")
             request = meta.impl(distribution=(community.global_time,), destination=(candidate,), payload=(member, message, missing_low, missing_high))
-            self._forward([request])
+            self._dispersy._forward([request])
 
             sendRequest = True
 
@@ -3067,7 +3055,7 @@ class Community(object):
                 highest = min(lowest + packet_limit, highest)
 
                 logger.debug("fetching member:%d message:%d %d packets from database for %s", member_id, message_id, highest - lowest + 1, candidate)
-                for packet, in self._database.execute(u"SELECT packet FROM sync WHERE member = ? AND meta_message = ? ORDER BY global_time LIMIT ? OFFSET ?",
+                for packet, in self._dispersy._database.execute(u"SELECT packet FROM sync WHERE member = ? AND meta_message = ? ORDER BY global_time LIMIT ? OFFSET ?",
                                                       (member_id, message_id, highest - lowest + 1, lowest - 1)):
                     packet = str(packet)
                     packets.append(packet)
@@ -3091,8 +3079,8 @@ class Community(object):
                     assert msg.distribution.sequence_number <= max(requests[(msg.authentication.member.database_id, msg.database_id)]), ["giving back a seq-number that is larger than the highest request", msg.distribution.sequence_number, min(requests[(msg.authentication.member.database_id, msg.database_id)]), max(requests[(msg.authentication.member.database_id, msg.database_id)])]
                     logger.debug("syncing %d bytes, member:%d message:%d sequence:%d explicit:%s to %s", len(packet), msg.authentication.member.database_id, msg.database_id, msg.distribution.sequence_number, "T" if msg.distribution.sequence_number in requests[(msg.authentication.member.database_id, msg.database_id)] else "F", candidate)
 
-            self._statistics.dict_inc(self._statistics.outgoing, u"-sequence-", len(packets))
-            self._endpoint.send([candidate], packets)
+            self._dispersy._statistics.dict_inc(self._statistics.outgoing, u"-sequence-", len(packets))
+            self._dispersy._endpoint.send([candidate], packets)
 
     def create_missing_proof(self, community, candidate, message, response_func=None, response_args=(), timeout=10.0):
         # ensure that the identifier is 'triggered' somewhere, i.e. using
@@ -3110,7 +3098,7 @@ class Community(object):
 
             meta = community.get_meta_message(u"dispersy-missing-proof")
             request = meta.impl(distribution=(community.global_time,), destination=(candidate,), payload=(message.authentication.member, message.distribution.global_time))
-            self._forward([request])
+            self._dispersy._forward([request])
             sendRequest = True
 
         if response_func:
@@ -3121,7 +3109,7 @@ class Community(object):
         community = messages[0].community
         for message in messages:
             try:
-                packet, = self._database.execute(u"SELECT packet FROM sync WHERE community = ? AND member = ? AND global_time = ? LIMIT 1",
+                packet, = self._dispersy._database.execute(u"SELECT packet FROM sync WHERE community = ? AND member = ? AND global_time = ? LIMIT 1",
                                                  (community.database_id, message.payload.member.database_id, message.payload.global_time)).next()
 
             except StopIteration:
@@ -3133,39 +3121,36 @@ class Community(object):
                 allowed, proofs = community.timeline.check(msg)
                 if allowed and proofs:
                     logger.debug("we found %d packets containing proof for %s", len(proofs), message.candidate)
-                    self._statistics.dict_inc(self._statistics.outgoing, u"-proof-", len(proofs))
-                    self._endpoint.send([message.candidate], [proof.packet for proof in proofs])
+                    self._dispersy._statistics.dict_inc(self._statistics.outgoing, u"-proof-", len(proofs))
+                    self._dispersy._endpoint.send([message.candidate], [proof.packet for proof in proofs])
 
                 else:
                     logger.debug("unable to give %s missing proof.  allowed:%s.  proofs:%d packets", message.candidate, allowed, len(proofs))
 
-    def create_authorize(self, community, permission_triplets, sign_with_master=False, store=True, update=True, forward=True):
+    def create_authorize(self, permission_triplets, sign_with_master=False, store=True, update=True, forward=True):
         """
-        Grant permissions to members in a community.
+        Grant permissions to members in a self.
 
         This method will generate a message that grants the permissions in permission_triplets.
         Each item in permission_triplets contains (Member, Message, permission) where permission is
         either u'permit', u'authorize', or u'revoke'.
 
-        By default, community.my_member is doing the authorization.  This means, that
-        community.my_member must have the authorize permission for each of the permissions that she
+        By default, self.my_member is doing the authorization.  This means, that
+        self.my_member must have the authorize permission for each of the permissions that she
         is authorizing.
 
         >>> # Authorize Bob to use Permit payload for 'some-message'
         >>> from Payload import Permit
         >>> bob = dispersy.get_member(bob_public_key)
         >>> msg = self.get_meta_message(u"some-message")
-        >>> self.create_authorize(community, [(bob, msg, u'permit')])
-
-        @param community: The community where the permissions must be applied.
-        @type sign_with_master: Community
+        >>> self.create_authorize(self, [(bob, msg, u'permit')])
 
         @param permission_triplets: The permissions that are granted.  Must be a list or tuple
          containing (Member, Message, permission) tuples.
         @type permissions_pairs: [(Member, Message, string)]
 
-        @param sign_with_master: When True community.master_member is used to sign the authorize
-         message.  Otherwise community.my_member is used.
+        @param sign_with_master: When True self.master_member is used to sign the authorize
+         message.  Otherwise self.my_member is used.
         @type sign_with_master: bool
 
         @param store: When True the messages are stored (as defined by their message distribution
@@ -3184,8 +3169,6 @@ class Community(object):
         @type store: bool
         """
         if __debug__:
-            from .community import Community
-            assert isinstance(community, Community)
             assert isinstance(permission_triplets, (tuple, list))
             for triplet in permission_triplets:
                 assert isinstance(triplet, tuple)
@@ -3195,12 +3178,12 @@ class Community(object):
                 assert isinstance(triplet[2], unicode)
                 assert triplet[2] in (u"permit", u"authorize", u"revoke", u"undo")
 
-        meta = community.get_meta_message(u"dispersy-authorize")
-        message = meta.impl(authentication=((community.master_member if sign_with_master else community.my_member),),
-                            distribution=(community.claim_global_time(), self._claim_master_member_sequence_number(community, meta) if sign_with_master else meta.distribution.claim_sequence_number()),
+        meta = self.get_meta_message(u"dispersy-authorize")
+        message = meta.impl(authentication=((self.master_member if sign_with_master else self.my_member),),
+                            distribution=(self.claim_global_time(), self._claim_master_member_sequence_number(meta) if sign_with_master else meta.distribution.claim_sequence_number()),
                             payload=(permission_triplets,))
 
-        self.store_update_forward([message], store, update, forward)
+        self._dispersy.store_update_forward([message], store, update, forward)
         return message
 
     # def check_authorize(self, messages):
@@ -3274,12 +3257,12 @@ class Community(object):
                 assert isinstance(triplet[2], unicode)
                 assert triplet[2] in (u"permit", u"authorize", u"revoke", u"undo")
 
-        meta = community.get_meta_message(u"dispersy-revoke")
+        meta = self.get_meta_message(u"dispersy-revoke")
         message = meta.impl(authentication=((community.master_member if sign_with_master else community.my_member),),
                             distribution=(community.claim_global_time(), self._claim_master_member_sequence_number(community, meta) if sign_with_master else meta.distribution.claim_sequence_number()),
                             payload=(permission_triplets,))
 
-        self.store_update_forward([message], store, update, forward)
+        self._dispersy.store_update_forward([message], store, update, forward)
         return message
 
     def create_undo(self, community, message, sign_with_master=False, store=True, update=True, forward=True):
@@ -3310,7 +3293,7 @@ class Community(object):
         # infinate data traffic).  nodes that notice this behavior must blacklist the offending
         # node.  hence we ensure that we did not send an undo before
         try:
-            undone, = self._database.execute(u"SELECT undone FROM sync WHERE community = ? AND member = ? AND global_time = ?",
+            undone, = self._dispersy._database.execute(u"SELECT undone FROM sync WHERE community = ? AND member = ? AND global_time = ?",
                                              (community.database_id, message.authentication.member.database_id, message.distribution.global_time)).next()
 
         except StopIteration:
@@ -3322,9 +3305,9 @@ class Community(object):
                 logger.error("you are attempting to undo the same message twice.  this should never be attempted as it is considered malicious behavior")
 
                 # already undone.  refuse to undo again but return the previous undo message
-                undo_own_meta = community.get_meta_message(u"dispersy-undo-own")
-                undo_other_meta = community.get_meta_message(u"dispersy-undo-other")
-                for packet_id, message_id, packet in self._database.execute(u"SELECT id, meta_message, packet FROM sync WHERE community = ? AND member = ? AND meta_message IN (?, ?)",
+                undo_own_meta = self.get_meta_message(u"dispersy-undo-own")
+                undo_other_meta = self.get_meta_message(u"dispersy-undo-other")
+                for packet_id, message_id, packet in self._dispersy._database.execute(u"SELECT id, meta_message, packet FROM sync WHERE community = ? AND member = ? AND meta_message IN (?, ?)",
                                                                             (community.database_id, message.authentication.member.database_id, undo_own_meta.database_id, undo_other_meta.database_id)):
                     msg = Packet(undo_own_meta if undo_own_meta.database_id == message_id else undo_other_meta, str(packet), packet_id).load_message()
                     if message.distribution.global_time == msg.payload.global_time:
@@ -3336,7 +3319,7 @@ class Community(object):
 
             else:
                 # create the undo message
-                meta = community.get_meta_message(u"dispersy-undo-own" if community.my_member == message.authentication.member and not sign_with_master else u"dispersy-undo-other")
+                meta = self.get_meta_message(u"dispersy-undo-own" if community.my_member == message.authentication.member and not sign_with_master else u"dispersy-undo-other")
                 msg = meta.impl(authentication=((community.master_member if sign_with_master else community.my_member),),
                                 distribution=(community.claim_global_time(), self._claim_master_member_sequence_number(community, meta) if sign_with_master else meta.distribution.claim_sequence_number()),
                                 payload=(message.authentication.member, message.distribution.global_time, message))
@@ -3346,30 +3329,27 @@ class Community(object):
                     allowed, _ = community.timeline.check(msg)
                     assert allowed, "create_undo was called without having the permission to undo"
 
-                self.store_update_forward([msg], store, update, forward)
+                self._dispersy.store_update_forward([msg], store, update, forward)
                 return msg
 
 
-    def create_destroy_community(self, community, degree, sign_with_master=False, store=True, update=True, forward=True):
-        if __debug__:
-            from .community import Community
-        assert isinstance(community, Community)
+    def create_destroy_community(self, degree, sign_with_master=False, store=True, update=True, forward=True):
         assert isinstance(degree, unicode)
         assert degree in (u"soft-kill", u"hard-kill")
 
-        meta = community.get_meta_message(u"dispersy-destroy-community")
-        message = meta.impl(authentication=((community.master_member if sign_with_master else community.my_member),),
-                            distribution=(community.claim_global_time(),),
+        meta = self.get_meta_message(u"dispersy-destroy-community")
+        message = meta.impl(authentication=((self.master_member if sign_with_master else self.my_member),),
+                            distribution=(self.claim_global_time(),),
                             payload=(degree,))
 
         # in this special case we need to forward the message before processing it locally.
         # otherwise the candidate table will have been cleaned and we won't have any destination
         # addresses.
-        self._forward([message])
+        self._dispersy._forward([message])
 
         # now store and update without forwarding.  forwarding now will result in new entries in our
         # candidate table that we just clean.
-        self.store_update_forward([message], store, update, False)
+        self._dispersy.store_update_forward([message], store, update, False)
         return message
 
     def on_destroy_community(self, messages):
@@ -3377,7 +3357,7 @@ class Community(object):
             from .community import Community
 
         # epidemic spread of the destroy message
-        self._forward(messages)
+        self._dispersy._forward(messages)
 
         for message in messages:
             assert message.name == u"dispersy-destroy-community"
@@ -3410,13 +3390,13 @@ class Community(object):
                 # need to be kept.  Just the ones in the chain to authorize the message that has just
                 # been received.
 
-                identity_message_id = community.get_meta_message(u"dispersy-identity").database_id
+                identity_message_id = self.get_meta_message(u"dispersy-identity").database_id
                 packet_ids = set()
                 identities = set()
 
                 # we should not remove our own dispersy-identity message
                 try:
-                    packet_id, = self._database.execute(u"SELECT id FROM sync WHERE meta_message = ? AND member = ?", (identity_message_id, community.my_member.database_id)).next()
+                    packet_id, = self._dispersy._database.execute(u"SELECT id FROM sync WHERE meta_message = ? AND member = ?", (identity_message_id, community.my_member.database_id)).next()
                 except StopIteration:
                     pass
                 else:
@@ -3435,7 +3415,7 @@ class Community(object):
                         if not item.authentication.member.public_key in identities:
                             identities.add(item.authentication.member.public_key)
                             try:
-                                packet_id, = self._database.execute(u"SELECT id FROM sync WHERE meta_message = ? AND member = ?",
+                                packet_id, = self._dispersy._database.execute(u"SELECT id FROM sync WHERE meta_message = ? AND member = ?",
                                                                     (identity_message_id, item.authentication.member.database_id)).next()
                             except StopIteration:
                                 pass
@@ -3447,30 +3427,29 @@ class Community(object):
                         todo.extend(proofs)
 
                 # 1. cleanup the double_signed_sync table.
-                self._database.execute(u"DELETE FROM double_signed_sync WHERE sync IN (SELECT id FROM sync JOIN double_signed_sync ON sync.id = double_signed_sync.sync WHERE sync.community = ?)", (community.database_id,))
+                self._dispersy._database.execute(u"DELETE FROM double_signed_sync WHERE sync IN (SELECT id FROM sync JOIN double_signed_sync ON sync.id = double_signed_sync.sync WHERE sync.community = ?)", (community.database_id,))
 
                 # 2. cleanup sync table.  everything except what we need to tell others this
                 # community is no longer available
-                self._database.execute(u"DELETE FROM sync WHERE community = ? AND id NOT IN (" + u", ".join(u"?" for _ in packet_ids) + ")", [community.database_id] + list(packet_ids))
+                self._dispersy._database.execute(u"DELETE FROM sync WHERE community = ? AND id NOT IN (" + u", ".join(u"?" for _ in packet_ids) + ")", [community.database_id] + list(packet_ids))
 
                 # 3. cleanup the malicious_proof table.  we need nothing here anymore
-                self._database.execute(u"DELETE FROM malicious_proof WHERE community = ?", (community.database_id,))
+                self._dispersy._database.execute(u"DELETE FROM malicious_proof WHERE community = ?", (community.database_id,))
 
             self.reclassify_community(community, new_classification)
 
-    def create_dynamic_settings(self, community, policies, sign_with_master=False, store=True, update=True, forward=True):
-        meta = community.get_meta_message(u"dispersy-dynamic-settings")
-        message = meta.impl(authentication=((community.master_member if sign_with_master else community.my_member),),
-                            distribution=(community.claim_global_time(), self._claim_master_member_sequence_number(community, meta) if sign_with_master else meta.distribution.claim_sequence_number()),
+    def create_dynamic_settings(self, policies, sign_with_master=False, store=True, update=True, forward=True):
+        meta = self.get_meta_message(u"dispersy-dynamic-settings")
+        message = meta.impl(authentication=((self.master_member if sign_with_master else self.my_member),),
+                            distribution=(self.claim_global_time(), self._claim_master_member_sequence_number(self, meta) if sign_with_master else meta.distribution.claim_sequence_number()),
                             payload=(policies,))
-        self.store_update_forward([message], store, update, forward)
+        self._dispersy.store_update_forward([message], store, update, forward)
         return message
 
-    def on_dynamic_settings(self, community, messages, initializing=False):
-        assert all(community == message.community for message in messages)
+    def on_dynamic_settings(self, messages, initializing=False):
         assert isinstance(initializing, bool)
-        timeline = community.timeline
-        global_time = community.global_time
+        timeline = self.timeline
+        global_time = self.global_time
         changes = {}
 
         for message in messages:
@@ -3490,8 +3469,8 @@ class Community(object):
 
         if not initializing:
             logger.debug("updating %d ranges", len(changes))
-            execute = self._database.execute
-            executemany = self._database.executemany
+            execute = self._dispersy._database.execute
+            executemany = self._dispersy._database.executemany
             for meta, range_ in changes.iteritems():
                 logger.debug("%s [%d:]", meta.name, range_[0])
                 undo = []
@@ -3499,7 +3478,7 @@ class Community(object):
 
                 for packet_id, packet, undone in list(execute(u"SELECT id, packet, undone FROM sync WHERE meta_message = ? AND global_time BETWEEN ? AND ?",
                                                               (meta.database_id, range_[0], range_[1]))):
-                    message = self.convert_packet_to_message(str(packet), community)
+                    message = self.convert_packet_to_message(str(packet), self)
                     if message:
                         message.packet_id = packet_id
                         allowed, _ = timeline.check(message)
@@ -3516,22 +3495,40 @@ class Community(object):
 
                 if undo:
                     executemany(u"UPDATE sync SET undone = 1 WHERE id = ?", ((message.packet_id,) for message in undo))
-                    assert self._database.changes == len(undo), (self._database.changes, len(undo))
+                    assert self._dispersy._database.changes == len(undo), (self._dispersy._database.changes, len(undo))
                     meta.undo_callback([(message.authentication.member, message.distribution.global_time, message) for message in undo])
 
                     # notify that global times have changed
-                    # meta.community.update_sync_range(meta, [message.distribution.global_time for message in undo])
+                    # meta.self.update_sync_range(meta, [message.distribution.global_time for message in undo])
 
                 if redo:
                     executemany(u"UPDATE sync SET undone = 0 WHERE id = ?", ((message.packet_id,) for message in redo))
-                    assert self._database.changes == len(redo), (self._database.changes, len(redo))
+                    assert self._dispersy._database.changes == len(redo), (self._dispersy._database.changes, len(redo))
                     meta.handle_callback(redo)
 
                     # notify that global times have changed
-                    # meta.community.update_sync_range(meta, [message.distribution.global_time for message in redo])
+                    # meta.self.update_sync_range(meta, [message.distribution.global_time for message in redo])
 
         # this might be a response to a dispersy-missing-proof or dispersy-missing-sequence
-        community.handle_missing_messages(messages, MissingProofCache, MissingSequenceCache)
+        self.handle_missing_messages(messages, MissingProofCache, MissingSequenceCache)
+
+    def _claim_master_member_sequence_number(self, meta):
+        """
+        Tries to guess the most recent sequence number used by the master member for META in
+        SELF.
+
+        This is a risky method because sequence numbers must be unique, however, we can not
+        guarantee that two peers do not claim a sequence number for the master member at around the
+        same time.  Unfortunately we can not overcome this problem in a distributed fashion.
+
+        Also note that calling this method twice will give identital values.  Ensure that the
+        message is updated locally before claiming another value to ensure different sequence
+        numbers are used.
+        """
+        assert isinstance(meta.distribution, FullSyncDistribution), "currently only FullSyncDistribution allows sequence numbers"
+        sequence_number, = self._dispersy._database.execute(u"SELECT COUNT(*) FROM sync WHERE member = ? AND sync.meta_message = ?",
+                                                  (self.master_member.database_id, meta.database_id)).next()
+        return sequence_number + 1
 
 
 

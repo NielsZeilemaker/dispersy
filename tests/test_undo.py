@@ -43,7 +43,7 @@ class TestUndo(DispersyTestFunc):
             self.assertEqual(undone, [(0,)])
 
         # cleanup
-        community.create_dispersy_destroy_community(u"hard-kill", forward=False)
+        community.create_destroy_community(u"hard-kill", forward=False)
         self._dispersy.get_community(community.cid).unload_community()
 
     @call_on_dispersy_thread
@@ -86,7 +86,7 @@ class TestUndo(DispersyTestFunc):
             self.assertEqual(undone, [(0,)])
 
         # cleanup
-        community.create_dispersy_destroy_community(u"hard-kill", forward=False)
+        community.create_destroy_community(u"hard-kill", forward=False)
         self._dispersy.get_community(community.cid).unload_community()
 
     @call_on_dispersy_thread
@@ -134,7 +134,7 @@ class TestUndo(DispersyTestFunc):
             self.assertEqual(undone, [(0,)])
 
         # cleanup
-        community.create_dispersy_destroy_community(u"hard-kill")
+        community.create_destroy_community(u"hard-kill")
         self._dispersy.get_community(community.cid).unload_community()
 
     @call_on_dispersy_thread
@@ -187,7 +187,7 @@ class TestUndo(DispersyTestFunc):
             self.assertEqual(undone, [(0,)])
 
         # cleanup
-        community.create_dispersy_destroy_community(u"hard-kill")
+        community.create_destroy_community(u"hard-kill")
         self._dispersy.get_community(community.cid).unload_community()
 
     @call_on_dispersy_thread
@@ -212,7 +212,7 @@ class TestUndo(DispersyTestFunc):
         self.assertEqual(undo1.packet, undo2.packet)
 
         # cleanup
-        community.create_dispersy_destroy_community(u"hard-kill")
+        community.create_destroy_community(u"hard-kill")
         self._dispersy.get_community(community.cid).unload_community()
 
     @call_on_dispersy_thread
@@ -280,7 +280,7 @@ class TestUndo(DispersyTestFunc):
         self.assertEqual(sorted(malicious_packets), sorted([undo1.packet, undo2.packet]))
 
         # cleanup
-        community.create_dispersy_destroy_community(u"hard-kill")
+        community.create_destroy_community(u"hard-kill")
         self._dispersy.get_community(community.cid).unload_community()
 
     @call_on_dispersy_thread
@@ -324,7 +324,7 @@ class TestUndo(DispersyTestFunc):
         self.assertFalse(self._dispersy.get_member(node.my_member.public_key).must_blacklist)
 
         # cleanup
-        community.create_dispersy_destroy_community(u"hard-kill")
+        community.create_destroy_community(u"hard-kill")
         self._dispersy.get_community(community.cid).unload_community()
 
     @call_on_dispersy_thread
@@ -383,7 +383,7 @@ class TestUndo(DispersyTestFunc):
             self.assertEqual(undone, [(0,)])
 
         # cleanup
-        community.create_dispersy_destroy_community(u"hard-kill")
+        community.create_destroy_community(u"hard-kill")
         self._dispersy.get_community(community.cid).unload_community()
 
     @call_on_dispersy_thread
@@ -404,7 +404,7 @@ class TestUndo(DispersyTestFunc):
         community.create_dispersy_revoke([(node1.my_member, community.get_meta_message(u"full-sync-text"), u"undo")])
 
         # cleanup
-        community.create_dispersy_destroy_community(u"hard-kill")
+        community.create_destroy_community(u"hard-kill")
         self._dispersy.get_community(community.cid).unload_community()
 
     @call_on_dispersy_thread
@@ -436,7 +436,7 @@ class TestUndo(DispersyTestFunc):
         self.assert_message_stored(community, community.my_member, message.distribution.global_time, undone="undone")
 
         # cleanup
-        community.create_dispersy_destroy_community(u"hard-kill")
+        community.create_destroy_community(u"hard-kill")
         self._dispersy.get_community(community.cid).unload_community()
 
     def assert_message_stored(self, community, member, global_time, undone="done"):

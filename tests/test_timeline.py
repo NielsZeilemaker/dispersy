@@ -26,13 +26,13 @@ class TestTimeline(DispersyTestFunc):
         logger.debug("    my_member: %s, %s", community.my_member.database_id, community.my_member.mid.encode("HEX"))
 
         # check if we are still allowed to send the message
-        message = community.create_dispersy_destroy_community(u"hard-kill", store=False, update=False, forward=False)
+        message = community.create_destroy_community(u"hard-kill", store=False, update=False, forward=False)
         self.assertEqual(message.authentication.member, self._my_member)
         result = list(message.check_callback([message]))
         self.assertEqual(result, [message], "check_... methods should return a generator with the accepted messages")
 
         # cleanup
-        community.create_dispersy_destroy_community(u"hard-kill")
+        community.create_destroy_community(u"hard-kill")
         self._dispersy.get_community(community.cid).unload_community()
 
     @call_on_dispersy_thread
@@ -56,14 +56,14 @@ class TestTimeline(DispersyTestFunc):
         community.create_dispersy_revoke([(community.my_member, community.get_meta_message(u"dispersy-destroy-community"), u"permit")], sign_with_master=True, store=False, forward=False)
 
         # check if we are still allowed to send the message
-        message = community.create_dispersy_destroy_community(u"hard-kill", store=False, update=False, forward=False)
+        message = community.create_destroy_community(u"hard-kill", store=False, update=False, forward=False)
         self.assertEqual(message.authentication.member, self._my_member)
         result = list(message.check_callback([message]))
         self.assertEqual(len(result), 1, "check_... methods should return a generator with the accepted messages")
         self.assertIsInstance(result[0], DelayMessageByProof, "check_... methods should return a generator with the accepted messages")
 
         # cleanup
-        community.create_dispersy_destroy_community(u"hard-kill", sign_with_master=True)
+        community.create_destroy_community(u"hard-kill", sign_with_master=True)
         self._dispersy.get_community(community.cid).unload_community()
 
     @call_on_dispersy_thread
@@ -97,11 +97,11 @@ class TestTimeline(DispersyTestFunc):
         community = communities[0]
 
         # check if we are still allowed to send the message
-        message = community.create_dispersy_destroy_community(u"hard-kill", store=False, update=False, forward=False)
+        message = community.create_destroy_community(u"hard-kill", store=False, update=False, forward=False)
         self.assertTrue(community.timeline.check(message))
 
         # cleanup
-        community.create_dispersy_destroy_community(u"hard-kill")
+        community.create_destroy_community(u"hard-kill")
         self._dispersy.get_community(community.cid).unload_community()
 
     @call_on_dispersy_thread
@@ -174,7 +174,7 @@ class TestTimeline(DispersyTestFunc):
             self.fail("should have been stored")
 
         # cleanup
-        community.create_dispersy_destroy_community(u"hard-kill")
+        community.create_destroy_community(u"hard-kill")
         self._dispersy.get_community(community.cid).unload_community()
 
     @call_on_dispersy_thread
@@ -207,7 +207,7 @@ class TestTimeline(DispersyTestFunc):
         self.assertIn(permission_triplet, authorize.payload.permission_triplets)
 
         # cleanup
-        community.create_dispersy_destroy_community(u"hard-kill")
+        community.create_destroy_community(u"hard-kill")
         self._dispersy.get_community(community.cid).unload_community()
 
     @call_on_dispersy_thread
@@ -269,5 +269,5 @@ class TestTimeline(DispersyTestFunc):
         self.assertIn(permission_triplet, authorize.payload.permission_triplets)
 
         # cleanup
-        community.create_dispersy_destroy_community(u"hard-kill")
+        community.create_destroy_community(u"hard-kill")
         self._dispersy.get_community(community.cid).unload_community()
