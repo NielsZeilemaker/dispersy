@@ -7,18 +7,11 @@ Community instance.
 @organization: Technical University Delft
 @contact: dispersy@frayja.com
 """
-
 from abc import ABCMeta, abstractmethod
 from itertools import islice
 from math import ceil
 from random import random, Random, randint, shuffle
 from time import time
-
-try:
-    # python 2.7 only...
-    from collections import OrderedDict
-except ImportError:
-    from .python27_ordereddict import OrderedDict
 
 from .bloomfilter import BloomFilter
 from .candidate import WalkCandidate, BootstrapCandidate
@@ -28,10 +21,24 @@ from .dispersy import Dispersy
 from .distribution import SyncDistribution, GlobalTimePruning
 from .logger import get_logger
 from .member import DummyMember, Member
+from .message import BatchConfiguration, Message
+from .payload import (AuthorizePayload, RevokePayload, UndoPayload, DestroyCommunityPayload, DynamicSettingsPayload,
+                      IdentityPayload, MissingIdentityPayload, IntroductionRequestPayload, IntroductionResponsePayload,
+                      PunctureRequestPayload, PuncturePayload, MissingMessagePayload, MissingLastMessagePayload,
+                      MissingSequencePayload, MissingProofPayload, SignatureRequestPayload, SignatureResponsePayload)
 from .requestcache import RequestCache
 from .resolution import PublicResolution, LinearResolution, DynamicResolution
 from .statistics import CommunityStatistics
 from .timeline import Timeline
+
+
+try:
+    # python 2.7 only...
+    from collections import OrderedDict
+except ImportError:
+    from .python27_ordereddict import OrderedDict
+
+
 logger = get_logger(__name__)
 
 

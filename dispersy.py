@@ -57,16 +57,12 @@ from .candidate import BootstrapCandidate, LoopbackCandidate, WalkCandidate, Can
 from .crypto import DispersyCrypto, ECCrypto
 from .destination import CommunityDestination, CandidateDestination
 from .dispersydatabase import DispersyDatabase
-from .distribution import SyncDistribution, FullSyncDistribution, LastSyncDistribution, DirectDistribution, GlobalTimePruning
+from .distribution import (SyncDistribution, FullSyncDistribution, LastSyncDistribution, DirectDistribution,
+                           GlobalTimePruning)
 from .logger import get_logger
 from .member import DummyMember, Member
-from .message import (BatchConfiguration, Packet, Message, DropMessage, DelayMessage, DelayMessageByProof,
-                      DelayMessageBySequence, DelayMessageByMissingMessage, DropPacket, DelayPacket)
-from .payload import (AuthorizePayload, RevokePayload, UndoPayload, DestroyCommunityPayload, DynamicSettingsPayload,
-                      IdentityPayload, MissingIdentityPayload, IntroductionRequestPayload, IntroductionResponsePayload,
-                      PunctureRequestPayload, PuncturePayload, MissingMessagePayload, MissingLastMessagePayload,
-                      MissingSequencePayload, MissingProofPayload, SignatureRequestPayload, SignatureResponsePayload)
-from .resolution import PublicResolution, LinearResolution
+from .message import (Packet, Message, DropMessage, DelayMessage, DelayMessageByProof, DelayMessageBySequence,
+                      DelayMessageByMissingMessage, DropPacket, DelayPacket)
 from .statistics import DispersyStatistics
 
 
