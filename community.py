@@ -2174,7 +2174,7 @@ class Community(object):
 
                 if packets:
                     logger.debug("syncing %d packets (%d bytes) to %s", len(packets), sum(len(packet) for packet in packets), message.candidate)
-                    self._dispersy._statistics.dict_inc(self._statistics.outgoing, u"-sync-", len(packets))
+                    self._dispersy._statistics.dict_inc(self._dispersy._statistics.outgoing, u"-sync-", len(packets))
                     self._dispersy._endpoint.send([message.candidate], packets)
 
     def check_undo(self, messages):
@@ -2267,7 +2267,7 @@ class Community(object):
                         self.declare_malicious_member(member, [msg, message])
 
                         # the sender apparently does not have the offending dispersy-undo message, lets give
-                        self._dispersy._statistics.dict_inc(self._statistics.outgoing, msg.name)
+                        self._dispersy._statistics.dict_inc(self._dispersy._statistics.outgoing, msg.name)
                         self._dispersy._endpoint.send([message.candidate], [msg.packet])
 
                         if member == community.my_member:
@@ -2740,7 +2740,7 @@ class Community(object):
         for candidate, responses in groupby(responses, key=lambda tup: tup[0]):
             # responses is an iterator, for __debug__ we need a list
             responses = list(responses)
-            self._dispersy._statistics.dict_inc(self._statistics.outgoing, u"-missing-message", len(responses))
+            self._dispersy._statistics.dict_inc(self._dispersy._statistics.outgoing, u"-missing-message", len(responses))
             self._dispersy._endpoint.send([candidate], [packet for _, packet in responses])
 
     def create_missing_last_message(self, candidate, member, message, count_, response_func=None, response_args=(), timeout=10.0):
@@ -2774,7 +2774,7 @@ class Community(object):
             payload = message.payload
             packets = [str(packet) for packet, in list(self._database.execute(u"SELECT packet FROM sync WHERE community = ? AND member = ? AND meta_message = ? ORDER BY global_time DESC LIMIT ?",
                                                                               (message.community.database_id, payload.member.database_id, payload.message.database_id, payload.count)))]
-            self._dispersy._statistics.dict_inc(self._statistics.outgoing, u"-missing-last-message", len(packets))
+            self._dispersy._statistics.dict_inc(self._dispersy._statistics.outgoing, u"-missing-last-message", len(packets))
             self._dispersy._endpoint.send([message.candidate], packets)
 
     def create_identity(self, sign_with_master=False, store=True, update=True):
@@ -2872,7 +2872,7 @@ class Community(object):
 
                 if packets:
                     logger.debug("responding with %d identity messages", len(packets))
-                    self._dispersy._statistics.dict_inc(self._statistics.outgoing, u"-dispersy-identity", len(packets))
+                    self._dispersy._statistics.dict_inc(self._dispersy._statistics.outgoing, u"-dispersy-identity", len(packets))
                     self._dispersy._endpoint.send([message.candidate], packets)
 
                 else:
@@ -3059,13 +3059,13 @@ class Community(object):
             if __debug__:
                 # ensure we are sending the correct sequence numbers back
                 for packet in packets:
-                    msg = self.convert_packet_to_message(packet, community)
+                    msg = self._dispersy.convert_packet_to_message(packet, community)
                     assert msg
                     assert min(requests[(msg.authentication.member.database_id, msg.database_id)]) <= msg.distribution.sequence_number, ["giving back a seq-number that is smaller than the lowest request", msg.distribution.sequence_number, min(requests[(msg.authentication.member.database_id, msg.database_id)]), max(requests[(msg.authentication.member.database_id, msg.database_id)])]
                     assert msg.distribution.sequence_number <= max(requests[(msg.authentication.member.database_id, msg.database_id)]), ["giving back a seq-number that is larger than the highest request", msg.distribution.sequence_number, min(requests[(msg.authentication.member.database_id, msg.database_id)]), max(requests[(msg.authentication.member.database_id, msg.database_id)])]
                     logger.debug("syncing %d bytes, member:%d message:%d sequence:%d explicit:%s to %s", len(packet), msg.authentication.member.database_id, msg.database_id, msg.distribution.sequence_number, "T" if msg.distribution.sequence_number in requests[(msg.authentication.member.database_id, msg.database_id)] else "F", candidate)
 
-            self._dispersy._statistics.dict_inc(self._statistics.outgoing, u"-sequence-", len(packets))
+            self._dispersy._statistics.dict_inc(self._dispersy._statistics.outgoing, u"-sequence-", len(packets))
             self._dispersy._endpoint.send([candidate], packets)
 
     def create_missing_proof(self, community, candidate, message, response_func=None, response_args=(), timeout=10.0):
@@ -3107,7 +3107,7 @@ class Community(object):
                 allowed, proofs = community.timeline.check(msg)
                 if allowed and proofs:
                     logger.debug("we found %d packets containing proof for %s", len(proofs), message.candidate)
-                    self._dispersy._statistics.dict_inc(self._statistics.outgoing, u"-proof-", len(proofs))
+                    self._dispersy._statistics.dict_inc(self._dispersy._statistics.outgoing, u"-proof-", len(proofs))
                     self._dispersy._endpoint.send([message.candidate], [proof.packet for proof in proofs])
 
                 else:
