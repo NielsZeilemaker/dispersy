@@ -107,8 +107,8 @@ class TrackerCommunity(Community):
 
         self._walked_stumbled_candidates = self._iter_categories([u'walk', u'stumble'])
 
-    def _initialize_meta_messages(self):
-        super(TrackerCommunity, self)._initialize_meta_messages()
+    def initiate_meta_messages(self):
+        super(TrackerCommunity, self).initiate_meta_messages()
 
         # remove all messages that we should not be using
         meta_messages = self._meta_messages
