@@ -2115,7 +2115,7 @@ class Community(object):
 
             if introduced:
                 logger.debug("telling %s that %s exists %s", candidate, introduced, type(community))
-                self._statistics.walk_advice_outgoing_response += 1
+                self._dispersy._statistics.walk_advice_outgoing_response += 1
 
                 # create introduction response
                 responses.append(meta_introduction_response.impl(authentication=(community.my_member,), distribution=(community.global_time,), destination=(candidate,), payload=(candidate.sock_addr, self._dispersy._lan_address, self._dispersy._wan_address, introduced.lan_address, introduced.wan_address, self._dispersy._connection_type, introduced.tunnel, payload.identifier)))

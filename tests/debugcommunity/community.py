@@ -60,8 +60,8 @@ class DebugCommunity(Community):
                                         [self.get_meta_message(name).database_id for name in message_names])
         return self._dispersy.database.changes
 
-    def initiate_meta_messages(self, *kargs, **kwargs):
-        messages = super(DebugCommunity, self).initiate_meta_messages(*kargs, **kwargs)
+    def initiate_meta_messages(self):
+        messages = super(DebugCommunity, self).initiate_meta_messages()
         messages.extend([
             Message(self, u"last-1-test",
                     MemberAuthentication(),
@@ -189,8 +189,6 @@ class DebugCommunity(Community):
                         self.on_text),
                 ])
         return messages
-
-
 
     def create_full_sync_text(self, text, store=True, update=True, forward=True):
         meta = self.get_meta_message(u"full-sync-text")
