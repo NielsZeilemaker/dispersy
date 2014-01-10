@@ -53,7 +53,7 @@ class TestTimeline(DispersyTestFunc):
         logger.debug("    my_member: %d, %s", community.my_member.database_id, community.my_member.mid.encode("HEX"))
 
         # remove the right to hard-kill
-        community.create_dispersy_revoke([(community.my_member, community.get_meta_message(u"dispersy-destroy-community"), u"permit")], sign_with_master=True, store=False, forward=False)
+        community.create_revoke([(community.my_member, community.get_meta_message(u"dispersy-destroy-community"), u"permit")], sign_with_master=True, store=False, forward=False)
 
         # check if we are still allowed to send the message
         message = community.create_destroy_community(u"hard-kill", store=False, update=False, forward=False)
@@ -126,7 +126,7 @@ class TestTimeline(DispersyTestFunc):
 
         # permit NODE1
         logger.debug("SELF creates dispersy-authorize for NODE1")
-        community.create_dispersy_authorize([(node1.my_member, community.get_meta_message(u"protected-full-sync-text"), u"permit"),
+        community.create_authorize([(node1.my_member, community.get_meta_message(u"protected-full-sync-text"), u"permit"),
                                              (node1.my_member, community.get_meta_message(u"protected-full-sync-text"), u"authorize")])
 
         # NODE2 created message @20
@@ -138,7 +138,7 @@ class TestTimeline(DispersyTestFunc):
 
         # may NOT have been stored in the database
         try:
-            packet, =  self._dispersy.database.execute(u"SELECT packet FROM sync WHERE community = ? AND member = ? AND global_time = ?",
+            packet, = self._dispersy.database.execute(u"SELECT packet FROM sync WHERE community = ? AND member = ? AND global_time = ?",
                                                        (community.database_id, node2.my_member.database_id, global_time)).next()
         except StopIteration:
             pass
@@ -168,7 +168,7 @@ class TestTimeline(DispersyTestFunc):
         # must have been stored in the database
         logger.debug("SELF must have processed both the proof and the protected-full-sync-text message")
         try:
-            packet, =  self._dispersy.database.execute(u"SELECT packet FROM sync WHERE community = ? AND member = ? AND global_time = ?",
+            packet, = self._dispersy.database.execute(u"SELECT packet FROM sync WHERE community = ? AND member = ? AND global_time = ?",
                                                        (community.database_id, node2.my_member.database_id, global_time)).next()
         except StopIteration:
             self.fail("should have been stored")
@@ -240,7 +240,7 @@ class TestTimeline(DispersyTestFunc):
 
         # permit NODE1
         logger.debug("SELF creates dispersy-authorize for NODE1")
-        message = community.create_dispersy_authorize([(node1.my_member, community.get_meta_message(u"protected-full-sync-text"), u"permit"),
+        message = community.create_authorize([(node1.my_member, community.get_meta_message(u"protected-full-sync-text"), u"permit"),
                                                        (node1.my_member, community.get_meta_message(u"protected-full-sync-text"), u"authorize")])
 
         # flush incoming socket buffer

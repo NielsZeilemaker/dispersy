@@ -226,7 +226,7 @@ class DebugCommunity(Community):
         message = meta.impl(authentication=([self._my_member, member],),
                             distribution=(self.global_time,),
                             payload=(text,))
-        return self.create_dispersy_signature_request(candidate, message, response_func, response_args, timeout, forward)
+        return self.create_signature_request(candidate, message, response_func, response_args, timeout, forward)
 
     def allow_double_signed_text(self, message):
         """

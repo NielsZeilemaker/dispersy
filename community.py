@@ -2159,7 +2159,7 @@ class Community(object):
                 messages_with_sync.append((message, time_low, time_high, offset, modulo))
 
         if messages_with_sync:
-            for message, generator in self._get_packets_for_bloomfilters(community, messages_with_sync, include_inactive=False):
+            for message, generator in self._get_packets_for_bloomfilters(messages_with_sync, include_inactive=False):
                 payload = message.payload
                 # we limit the response by byte_limit bytes
                 byte_limit = community.dispersy_sync_response_limit
@@ -2366,13 +2366,13 @@ class Community(object):
             logger.debug("introduction response from %s", candidate)
 
             # apply vote to determine our WAN address
-            self.wan_address_vote(payload.destination_address, candidate)
+            self._dispersy.wan_address_vote(payload.destination_address, candidate)
 
             # increment statistics only the first time
-            self._statistics.walk_success += 1
+            self._dispersy._statistics.walk_success += 1
             if isinstance(candidate, BootstrapCandidate):
-                self._statistics.walk_bootstrap_success += 1
-            self._dispersy._statistics.dict_inc(self._statistics.incoming_introduction_response, candidate.sock_addr)
+                self._dispersy._statistics.walk_bootstrap_success += 1
+            self._dispersy._statistics.dict_inc(self._dispersy._statistics.incoming_introduction_response, candidate.sock_addr)
 
             # get cache object linked to this request and stop timeout from occurring
             cache = community.request_cache.get(IntroductionRequestCache.create_identifier(message.payload.identifier))
@@ -2387,14 +2387,14 @@ class Community(object):
                 assert self.is_valid_address(wan_introduction_address), wan_introduction_address
 
                 # get or create the introduced candidate
-                self._statistics.walk_advice_incoming_response += 1
+                self._dispersy._statistics.walk_advice_incoming_response += 1
                 sock_introduction_addr = lan_introduction_address if wan_introduction_address[0] == self._dispersy._wan_address[0] else wan_introduction_address
                 introduce = community.get_candidate(sock_introduction_addr, replace=False, lan_address=lan_introduction_address)
                 if introduce is None:
                     # create candidate but set its state to inactive to ensure that it will not be
                     # used.  note that we call candidate.intro to allow the candidate to be returned
                     # by get_walk_candidate and yield_candidates
-                    self._statistics.walk_advice_incoming_response_new += 1
+                    self._dispersy._statistics.walk_advice_incoming_response_new += 1
                     introduce = community.create_candidate(sock_introduction_addr, payload.tunnel, lan_introduction_address, wan_introduction_address, u"unknown")
                     introduce.inactive(now)
 
@@ -2407,21 +2407,21 @@ class Community(object):
                 cache.response_candidate = introduce
 
                 # update statistics
-                if self._statistics.received_introductions != None:
-                    self._statistics.received_introductions[candidate.sock_addr][introduce.sock_addr] += 1
+                if self._dispersy._statistics.received_introductions != None:
+                    self._dispersy._statistics.received_introductions[candidate.sock_addr][introduce.sock_addr] += 1
 
                 # TEMP: see which peers we get returned by the trackers
-                if self._statistics.bootstrap_candidates != None and isinstance(message.candidate, BootstrapCandidate):
-                    self._statistics.bootstrap_candidates[introduce.sock_addr] = self._statistics.bootstrap_candidates.get(introduce.sock_addr, 0) + 1
+                if self._dispersy._statistics.bootstrap_candidates != None and isinstance(message.candidate, BootstrapCandidate):
+                    self._dispersy._statistics.bootstrap_candidates[introduce.sock_addr] = self._dispersy._statistics.bootstrap_candidates.get(introduce.sock_addr, 0) + 1
 
             else:
                 # update statistics
-                if self._statistics.received_introductions != None:
-                    self._statistics.received_introductions[candidate.sock_addr][wan_introduction_address] += 1
+                if self._dispersy._statistics.received_introductions != None:
+                    self._dispersy._statistics.received_introductions[candidate.sock_addr][wan_introduction_address] += 1
 
                 # TEMP: see which peers we get returned by the trackers
-                if self._statistics.bootstrap_candidates != None and isinstance(message.candidate, BootstrapCandidate):
-                    self._statistics.bootstrap_candidates["none"] = self._statistics.bootstrap_candidates.get("none", 0) + 1
+                if self._dispersy._statistics.bootstrap_candidates != None and isinstance(message.candidate, BootstrapCandidate):
+                    self._dispersy._statistics.bootstrap_candidates["none"] = self._dispersy._statistics.bootstrap_candidates.get("none", 0) + 1
 
 
     @abstractmethod
@@ -2730,7 +2730,7 @@ class Community(object):
             member_database_id = message.payload.member.database_id
             for global_time in message.payload.global_times:
                 try:
-                    packet, = self._database.execute(u"SELECT packet FROM sync WHERE community = ? AND member = ? AND global_time = ?",
+                    packet, = self._dispersy._database.execute(u"SELECT packet FROM sync WHERE community = ? AND member = ? AND global_time = ?",
                                                      (community_database_id, member_database_id, global_time)).next()
                 except StopIteration:
                     pass
@@ -3068,22 +3068,22 @@ class Community(object):
             self._dispersy._statistics.dict_inc(self._dispersy._statistics.outgoing, u"-sequence-", len(packets))
             self._dispersy._endpoint.send([candidate], packets)
 
-    def create_missing_proof(self, community, candidate, message, response_func=None, response_args=(), timeout=10.0):
+    def create_missing_proof(self, candidate, message, response_func=None, response_args=(), timeout=10.0):
         # ensure that the identifier is 'triggered' somewhere, i.e. using
         # handle_missing_messages(messages, MissingProofCache)
 
         sendRequest = False
-        cache = community.request_cache.get(MissingProofCache.create_identifier())
+        cache = self.request_cache.get(MissingProofCache.create_identifier())
         if not cache:
-            cache = community.request_cache.add(MissingProofCache(timeout))
+            cache = self.request_cache.add(MissingProofCache(timeout))
             logger.debug("new cache: %s", cache)
 
         key = (message.meta, message.authentication.member)
         if not key in cache.duplicates:
             cache.duplicates.append(key)
 
-            meta = community.get_meta_message(u"dispersy-missing-proof")
-            request = meta.impl(distribution=(community.global_time,), destination=(candidate,), payload=(message.authentication.member, message.distribution.global_time))
+            meta = self.get_meta_message(u"dispersy-missing-proof")
+            request = meta.impl(distribution=(self.global_time,), destination=(candidate,), payload=(message.authentication.member, message.distribution.global_time))
             self._dispersy._forward([request])
             sendRequest = True
 
@@ -3454,7 +3454,7 @@ class Community(object):
 
                 for packet_id, packet, undone in list(execute(u"SELECT id, packet, undone FROM sync WHERE meta_message = ? AND global_time BETWEEN ? AND ?",
                                                               (meta.database_id, range_[0], range_[1]))):
-                    message = self.convert_packet_to_message(str(packet), self)
+                    message = self._dispersy.convert_packet_to_message(str(packet), self)
                     if message:
                         message.packet_id = packet_id
                         allowed, _ = timeline.check(message)
