@@ -167,7 +167,7 @@ class TrackerCommunity(Community):
         # since the trackers use in-memory databases, we need to store the destroy-community
         # message, and all associated proof, separately.
         host, port = message.candidate.sock_addr
-        print "DESTROY_IN", self._cid.encode("HEX"), message.authentication.member.mid.encode("HEX"), ord(message.conversion.dispersy_version), ord(message.conversion.community_version), host, port
+        print long(time()), "DESTROY_IN", self._cid.encode("HEX"), message.authentication.member.mid.encode("HEX"), ord(message.conversion.dispersy_version), ord(message.conversion.community_version), host, port
 
         write = open(self._dispersy.persistent_storage_filename, "a+").write
         write("# received dispersy-destroy-community from %s\n" % (str(message.candidate),))
@@ -339,13 +339,14 @@ class TrackerDispersy(Dispersy):
             for community in self._communities.itervalues():
                 mapping[type(community)] += 1
 
-            print "BANDWIDTH", self._endpoint.total_up, self._endpoint.total_down
-            print "COMMUNITY", mapping[TrackerCommunity], mapping[TrackerHardKilledCommunity]
-            print "CANDIDATE2", sum(len(list(community.dispersy_yield_verified_candidates())) for community in self._communities.itervalues())
+            now = time()
+            print long(now), "BANDWIDTH", self._endpoint.total_up, self._endpoint.total_down
+            print long(now), "COMMUNITY", mapping[TrackerCommunity], mapping[TrackerHardKilledCommunity]
+            print long(now), "CANDIDATE2", sum(len(list(community.dispersy_yield_verified_candidates())) for community in self._communities.itervalues())
 
             if self._statistics.outgoing:
                 for key, value in self._statistics.outgoing.iteritems():
-                    print "OUTGOING", key, value
+                    print long(now), "OUTGOING", key, value
 
     def create_introduction_request(self, community, destination, allow_sync, forward=True):
         # prevent steps towards other trackers
@@ -365,7 +366,7 @@ class TrackerDispersy(Dispersy):
             hex_cid = messages[0].community.cid.encode("HEX")
             for message in messages:
                 host, port = message.candidate.sock_addr
-                print "REQ_IN2", hex_cid, message.authentication.member.mid.encode("HEX"), ord(message.conversion.dispersy_version), ord(message.conversion.community_version), host, port
+                print long(time()), "REQ_IN2", hex_cid, message.authentication.member.mid.encode("HEX"), ord(message.conversion.dispersy_version), ord(message.conversion.community_version), host, port
         return super(TrackerDispersy, self).on_introduction_request(messages)
 
     def on_introduction_response(self, messages):
@@ -373,7 +374,7 @@ class TrackerDispersy(Dispersy):
             hex_cid = messages[0].community.cid.encode("HEX")
             for message in messages:
                 host, port = message.candidate.sock_addr
-                print "RES_IN2", hex_cid, message.authentication.member.mid.encode("HEX"), ord(message.conversion.dispersy_version), ord(message.conversion.community_version), host, port
+                print long(time()), "RES_IN2", hex_cid, message.authentication.member.mid.encode("HEX"), ord(message.conversion.dispersy_version), ord(message.conversion.community_version), host, port
         return super(TrackerDispersy, self).on_introduction_response(messages)
 
 
