@@ -1079,7 +1079,7 @@ class NoDefBinaryConversion(Conversion):
         # sign
         packet = encode_functions.signature(container, message, sign)
 
-        logger.debug("created message %s (%d bytes)", message.name, len(packet))
+        logger.warning("created message %s (%d bytes)", message.name, len(packet))
         return packet
 
     #
