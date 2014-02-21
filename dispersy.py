@@ -1606,6 +1606,8 @@ WHERE sync.meta_message = ? AND double_signed_sync.member1 = ? AND double_signed
         # find associated conversion
         try:
             conversion = community.get_conversion_for_packet(packet)
+            logger.warning("using %s to convert a %d byte packet", str(conversion), len(packet))
+
         except KeyError:
             logger.warning("unable to convert a %d byte packet (unknown conversion)", len(packet))
             return None
