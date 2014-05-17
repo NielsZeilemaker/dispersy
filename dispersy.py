@@ -2207,7 +2207,6 @@ ORDER BY global_time""", (meta.database_id, member_database_id)))
         self._pending_tasks["candidates"] = lc = LoopingCall(self._stats_detailed_candidates)
         lc.start(STATS_DETAILED_CANDIDATES_INTERVAL)
 
-
         # log and return the result
         if all(result for _, result in results):
             logger.info("Dispersy core ready (database: %s, port:%d)",
