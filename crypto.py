@@ -9,8 +9,16 @@ from M2Crypto.EC import EC_pub
 
 import libnacl.dual
 
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.asymmetric.utils import decode_rfc6979_signature
+
 from .util import attach_runtime_statistics
 from libnacl.encode import hex_decode, hex_encode
+from cryptography.hazmat.primitives.asymmetric.ec import generate_private_key, \
+    EllipticCurvePublicNumbers, EllipticCurvePrivateNumbers
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import hashes
+import json
 
 _STRUCT_L = Struct(">L")
 
@@ -27,6 +35,7 @@ _CURVES.update({u"very-low": (EC.NID_sect163k1, "M2Crypto"),
 
 # Add custom curves, not provided by M2Crypto
 _CURVES.update({u'curve25519': (None, "libnacl")})
+_CURVES.update(dict((unicode(getattr(ec, curve)().name), (getattr(ec, curve), "cryptography")) for curve in dir(ec) if curve.startswith("SEC")))
 
 logger = logging.getLogger(__name__)
 
@@ -140,6 +149,9 @@ class ECCrypto(DispersyCrypto):
         if curve[1] == "libnacl":
             return LibNaCLSK()
 
+        if curve[1] == "cryptography":
+            return CryptographySK(curve[0])
+
     @attach_runtime_statistics(u"{0.__class__.__name__}.{function_name}")
     def key_to_bin(self, ec):
         "Convert the key to a binary format."
@@ -175,6 +187,8 @@ class ECCrypto(DispersyCrypto):
         "Get the EC from a public/private keypair stored in a binary format."
         if string.startswith("LibNaCLSK:"):
             return LibNaCLSK(string[10:])
+        if string.startswith("cryptographySK:"):
+            return CryptographySK(keystring=string[15:])
         return M2CryptoSK(keystring=string)
 
     @attach_runtime_statistics(u"{0.__class__.__name__}.{function_name}")
@@ -182,6 +196,8 @@ class ECCrypto(DispersyCrypto):
         "Get the EC from a public key in binary format."
         if string.startswith("LibNaCLPK:"):
             return LibNaCLPK(string[10:])
+        if string.startswith("cryptographyPK:"):
+            return CryptographyPK(keystring=string[15:])
         return M2CryptoPK(keystring=string)
 
     def get_signature_length(self, ec):
@@ -212,8 +228,10 @@ class ECCrypto(DispersyCrypto):
 
         try:
             return ec.verify(signature, data)
-        except:
+
+        except Exception as e:
             return False
+
 
 class NoVerifyCrypto(ECCrypto):
     """
@@ -236,6 +254,7 @@ class NoCrypto(NoVerifyCrypto):
 
 class DispersyKey(object):
     pass
+
 
 class M2CryptoPK(DispersyKey):
 
@@ -400,3 +419,81 @@ class LibNaCLSK(LibNaCLPK):
 
     def key_to_bin(self):
         return "LibNaCLSK:" + self.key.sk + self.key.seed
+
+
+class CryptographyPK(DispersyKey):
+
+    def __init__(self, pk=None, keystring=None):
+        if pk:
+            self.pk = pk
+
+        elif keystring:
+            numbers = json.loads(keystring)
+            numbers = EllipticCurvePublicNumbers(numbers['x'], numbers['y'], self.get_curve(numbers['curve']))
+            self.pk = numbers.public_key(default_backend())
+        else:
+            raise RuntimeError('need at least pk or keystring to be set')
+
+    def pub(self):
+        return self
+
+    def has_secret_key(self):
+        return False
+
+    def get_signature_length(self):
+        return int(ceil(self.pk.curve.key_size / 8.0) * 2 + 16)
+
+    def verify(self, signature, msg):
+        verifier = self.pk.verifier(signature, ec.ECDSA(hashes.SHA256()))
+        verifier.update(msg)
+        return verifier.verify()
+
+    def key_to_bin(self):
+        numbers = self.pk.public_numbers()
+        return "cryptographyPK:" + json.dumps({'curve':numbers.curve.name, 'x':numbers.x, 'y':numbers.y})
+
+    def get_curve(self, curve_name):
+        if curve_name in _CURVES:
+            return _CURVES[curve_name][0]()
+
+        raise RuntimeError("unsupported curve '%s'" % curve_name)
+
+
+class CryptographySK(CryptographyPK):
+
+    def __init__(self, curve=None, keystring=None):
+        if curve:
+            self.sk = generate_private_key(curve(), default_backend())
+
+        elif keystring:
+            numbers = json.loads(keystring)
+            public_numbers = EllipticCurvePublicNumbers(numbers['x'], numbers['y'], self.get_curve(numbers['curve']))
+            private_numbers = EllipticCurvePrivateNumbers(numbers['private'], public_numbers)
+            self.sk = private_numbers.private_key(default_backend())
+        else:
+            raise RuntimeError('need at least curve or keystring to be set')
+
+        self.pk = self.sk.public_key()
+
+    def pub(self):
+        return CryptographyPK(self.pk)
+
+    def has_secret_key(self):
+        return True
+
+    def signature(self, msg):
+        signer = self.sk.signer(ec.ECDSA(hashes.SHA256()))
+        signer.update(msg)
+
+        signature = signer.finalize()
+        if len(signature) < self.get_signature_length():
+            signature = signature + " " * (self.get_signature_length() - len(signature))
+        elif len(signature) > self.get_signature_length():
+            raise RuntimeError("signature longer than expected")
+
+        return signature
+
+    def key_to_bin(self):
+        numbers = self.sk.private_numbers()
+        return "cryptographySK:" + json.dumps({'curve':numbers.public_numbers.curve.name, 'x':numbers.public_numbers.x, 'y':numbers.public_numbers.y, 'private':numbers.private_value})
+
